@@ -37,10 +37,10 @@ View your app in AI Studio: https://ai.studio/apps/drive/1fN0Gg-P6qvAqavzOsQ4CRD
    npm run dev
    ```
 
-The app runs on http://localhost:3000.
+This project configures Vite to use port 3000 (see `vite.config.ts`) instead of the default 5173. To override it, update the config or run `npm run dev -- --port <your-port>`, and always confirm the active port in the terminal output.
 
 ## Usage
-1. Sign up or log in (credentials are stored in local storage for demo use only).
+1. Sign up or log in (credentials are stored in local storage for demo use only and are **not** production-ready—use proper authentication for real deployments).
 2. Enter an app idea in the intent panel and click **Run**.
 3. Track agent progress in the status badge and terminal logs.
 4. Review generated files in the editor, then switch to **Preview** to view the UI.
@@ -51,10 +51,8 @@ The app runs on http://localhost:3000.
 - `npm run build` — build production assets to `dist/`.
 - `npm run preview` — preview the production build locally.
 
-No linting or test scripts are configured in this project.
-
 ## Configuration
-- **Environment variables:** `GEMINI_API_KEY` is loaded in `vite.config.ts` and exposed as `process.env.API_KEY` / `process.env.GEMINI_API_KEY` for the Gemini client.
+- **Environment variables:** `GEMINI_API_KEY` is loaded from `.env.local` in `vite.config.ts` and exposed as `process.env.API_KEY`, which is what `geminiService.ts` uses. `process.env.GEMINI_API_KEY` is also defined if you need the original name elsewhere.
 - **Port:** the dev server is configured for port `3000`.
 
 ## Project Structure
