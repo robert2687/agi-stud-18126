@@ -20,10 +20,15 @@ import {
   Undo,
   Redo,
   ExternalLink,
-  Save
+  Save,
+  User as UserIcon,
+  Lock,
+  LogOut,
+  ArrowRight,
+  Clock
 } from 'lucide-react';
 import Editor, { OnMount } from "@monaco-editor/react";
-import { ProjectState, AgentStatus, DesignSystem } from './types';
+import { ProjectState, AgentStatus, DesignSystem, User } from './types';
 import { 
   getPlannerResponse, 
   getDesignerResponse, 
@@ -33,6 +38,8 @@ import {
 
 // --- Constants ---
 const STORAGE_KEY = 'agentic_studio_pro_v1';
+const AUTH_KEY = 'agentic_studio_auth';
+const SESSION_KEY = 'agentic_studio_session';
 
 const getFileLanguage = (filename: string | null) => {
   if (!filename) return "typescript";
@@ -45,12 +52,127 @@ const getFileLanguage = (filename: string | null) => {
     css: "css",
     html: "html",
     json: "json",
-    md: "markdown"
+    md: "markdown",
+    py: "python",
+    go: "go",
+    rs: "rust",
+    sql: "sql",
+    yaml: "yaml",
+    yml: "yaml"
   };
   return map[ext || ""] || "typescript";
 };
 
-// --- Components ---
+// --- Auth Component ---
+
+const AuthScreen: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!username || !password) {
+      setError('Please fill in all fields.');
+      return;
+    }
+
+    const users = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
+
+    if (isLogin) {
+      if (users[username] && users[username] === password) {
+        const user = { username };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+        onLogin(user);
+      } else {
+        setError('Invalid username or password.');
+      }
+    } else {
+      if (users[username]) {
+        setError('Username already exists.');
+      } else {
+        users[username] = password;
+        localStorage.setItem(AUTH_KEY, JSON.stringify(users));
+        const user = { username };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+        onLogin(user);
+      }
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse" />
+      </div>
+
+      <div className="w-full max-w-md bg-[#0f172a]/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 z-10">
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20 mb-4">
+            <Cpu className="text-white" size={32} />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white uppercase">Agentic Studio <span className="text-blue-400">Pro</span></h1>
+          <p className="text-slate-400 text-sm font-medium mt-1">THE SELF-HEALING ENGINE</p>
+        </div>
+
+        <form onSubmit={handleAuth} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Username</label>
+            <div className="relative">
+              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                placeholder="developer_pro"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                placeholder="••••••••"
+              />
+            </div>
+          </div>
+
+          {error && <p className="text-red-400 text-xs font-medium bg-red-400/10 p-3 rounded-lg border border-red-400/20">{error}</p>}
+
+          <button
+            type="submit"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 group"
+          >
+            {isLogin ? 'LOG IN' : 'SIGN UP'}
+            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+        </form>
+
+        <div className="mt-8 text-center">
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-sm text-slate-400 hover:text-blue-400 transition-colors"
+          >
+            {isLogin ? "Don't have an account? Sign up" : "Already have an account? Log in"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- IDE Components ---
 
 const StatusBadge: React.FC<{ status: AgentStatus }> = ({ status }) => {
   const config = {
@@ -81,7 +203,7 @@ const FileExplorer: React.FC<{
   onFileSelect: (f: string) => void 
 }> = ({ files, activeFile, onFileSelect }) => {
   return (
-    <div className="flex flex-col h-full bg-[#0f172a] border-r border-slate-800 w-64">
+    <div className="flex flex-col h-full bg-[#0f172a] border-r border-slate-800 w-64 shrink-0">
       <div className="p-4 border-b border-slate-800 flex items-center gap-2 text-slate-400 font-medium">
         <Files size={18} />
         <span className="text-sm">FILES</span>
@@ -131,37 +253,29 @@ const Terminal: React.FC<{ logs: string[] }> = ({ logs }) => {
   );
 };
 
-/**
- * Performance-optimized Preview Component
- * Uses React.memo to prevent unnecessary iframe reloads during state changes in the main App.
- */
-const PreviewSystem = React.memo(({ status, designSystem }: { status: AgentStatus; designSystem?: DesignSystem }) => {
-  if (status !== 'ready') {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 text-slate-400 text-sm gap-4">
-        <Loader2 size={32} className="animate-spin text-blue-500" />
-        <span>Awaiting system compilation...</span>
-      </div>
-    );
-  }
-
+const IframePreview = React.memo(({ designSystem }: { designSystem?: DesignSystem }) => {
   return (
     <iframe 
       title="preview"
-      className="flex-1 w-full border-none"
+      className="flex-1 w-full border-none h-full bg-white"
       srcDoc={`
         <html>
           <head>
             <script src="https://cdn.tailwindcss.com"></script>
             <style>
-              body { font-family: sans-serif; }
+              body { font-family: sans-serif; background: ${designSystem?.colors?.background || '#f8fafc'}; color: ${designSystem?.colors?.foreground || '#0f172a'}; margin: 0; }
+              .btn-primary { background-color: ${designSystem?.colors?.primary || '#2563eb'}; color: ${designSystem?.colors?.primaryForeground || '#ffffff'}; }
             </style>
           </head>
-          <body class="bg-slate-50 flex items-center justify-center h-screen font-sans">
-            <div class="text-center p-8 bg-white shadow-xl rounded-2xl max-w-md border border-slate-100">
+          <body class="flex items-center justify-center min-h-screen p-4">
+            <div class="text-center p-8 bg-white shadow-xl rounded-2xl max-w-md border border-slate-100 transition-all hover:scale-[1.02]">
               <h1 class="text-2xl font-bold text-slate-800 mb-4">${designSystem?.metadata.appName || 'Application Ready'}</h1>
-              <p class="text-slate-500 mb-6 text-sm">Your browser-native environment has been successfully deployed and self-healed.</p>
-              <button class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-all shadow-md">
+              <p class="text-slate-500 mb-6 text-sm">
+                Your browser-native environment has been successfully deployed and self-healed. 
+                The agents have completed the architectural cycle for: 
+                <span class="block mt-2 font-mono text-[10px] bg-slate-100 p-2 rounded text-slate-700">${designSystem?.metadata.styleVibe || 'Modern'} Vibe</span>
+              </p>
+              <button class="btn-primary px-6 py-2 rounded-lg font-semibold transition-all shadow-md active:scale-95">
                 GET STARTED
               </button>
               <div class="mt-8 pt-6 border-t border-slate-100 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
@@ -174,25 +288,51 @@ const PreviewSystem = React.memo(({ status, designSystem }: { status: AgentStatu
     />
   );
 }, (prev, next) => {
-  // Only re-render if the status changes OR if we are ready and the design system changed.
-  if (prev.status !== next.status) return false;
-  if (next.status === 'ready' && prev.designSystem !== next.designSystem) return false;
-  return true;
+  return JSON.stringify(prev.designSystem) === JSON.stringify(next.designSystem);
 });
+
+const PreviewSystem = ({ status, designSystem }: { status: AgentStatus; designSystem?: DesignSystem }) => {
+  const isReady = status === 'ready';
+
+  return (
+    <div className="flex-1 flex flex-col relative overflow-hidden h-full">
+      {isReady ? (
+        <IframePreview designSystem={designSystem} />
+      ) : (
+        <div className="flex-1 w-full bg-slate-100 animate-pulse" />
+      )}
+
+      {!isReady && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-50/90 backdrop-blur-sm text-slate-400 text-sm gap-4 transition-all duration-300">
+          <Loader2 size={32} className="animate-spin text-blue-500" />
+          <div className="text-center">
+            <p className="font-bold text-slate-600">Awaiting system compilation...</p>
+            <p className="text-[10px] uppercase tracking-widest mt-1 opacity-60">Phase: {status}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // --- Main App ---
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(() => {
+    const session = localStorage.getItem(SESSION_KEY);
+    return session ? JSON.parse(session) : null;
+  });
+
   const [project, setProject] = useState<ProjectState>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure status resets to idle/ready on reload to prevent loop stuckness
+        // Explicitly restoring state while ensuring status transitions are safe
         return { 
           ...parsed, 
           status: parsed.status === 'ready' ? 'ready' : 'idle',
-          terminalLogs: [...(parsed.terminalLogs || []), `> Restored session from auto-save.`]
+          terminalLogs: [...(parsed.terminalLogs || []), `> System workspace restored. Last seen at ${parsed.lastSaved || 'unknown'}.`]
         };
       } catch (e) {
         console.error("Failed to parse saved project state", e);
@@ -211,13 +351,43 @@ export default function App() {
   const [input, setInput] = useState(project.userPrompt);
   const [activeTab, setActiveTab] = useState<'code' | 'preview'>(project.status === 'ready' ? 'preview' : 'code');
   const [isSaving, setIsSaving] = useState(false);
-  
-  // Editor Ref for programmatic undo/redo
   const editorRef = useRef<any>(null);
 
   const addLog = (msg: string) => {
     setProject(prev => ({ ...prev, terminalLogs: [...prev.terminalLogs, msg] }));
   };
+
+  /**
+   * Core persistence logic: saves current workspace state to disk.
+   */
+  const saveToDisk = useCallback(() => {
+    setIsSaving(true);
+    const now = new Date().toLocaleTimeString();
+    const updatedProject = { ...project, lastSaved: now };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProject));
+    setProject(prev => ({ ...prev, lastSaved: now }));
+    setTimeout(() => setIsSaving(false), 800);
+  }, [project]);
+
+  // Auto-save debounced effect
+  useEffect(() => {
+    if (!user) return;
+    const timeoutId = setTimeout(saveToDisk, 1500);
+    return () => clearTimeout(timeoutId);
+  }, [project.fileSystem, project.currentFile, project.userPrompt, project.status, user, saveToDisk]);
+
+  // Keyboard shortcut listener for manual save (Cmd/Ctrl + S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveToDisk();
+        addLog("> Manual save complete.");
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveToDisk]);
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -237,21 +407,13 @@ export default function App() {
     }
   };
 
-  // Auto-save logic
-  useEffect(() => {
-    const saveToDisk = () => {
-      setIsSaving(true);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
-      setTimeout(() => setIsSaving(false), 500);
-    };
-
-    const timeoutId = setTimeout(saveToDisk, 1000);
-    return () => clearTimeout(timeoutId);
-  }, [project]);
+  const handleLogout = () => {
+    localStorage.removeItem(SESSION_KEY);
+    setUser(null);
+  };
 
   const startGeneration = async () => {
     if (!input) return;
-    
     setProject(prev => ({
       ...prev,
       userPrompt: input,
@@ -266,16 +428,14 @@ export default function App() {
     if (project.currentFile && value !== undefined) {
       setProject(prev => ({
         ...prev,
-        fileSystem: {
-          ...prev.fileSystem,
-          [prev.currentFile!]: value
-        }
+        fileSystem: { ...prev.fileSystem, [prev.currentFile!]: value }
       }));
     }
   };
 
-  // Agent Swarm logic - Controlled by useEffect on status
   useEffect(() => {
+    if (!user) return;
+
     const runPlanner = async () => {
       try {
         addLog("Planner: Analyzing intent and creating engineering blueprint...");
@@ -319,7 +479,6 @@ export default function App() {
       try {
         if (!project.plan || !project.designSystem) return;
         const filesToCode = Object.keys(project.fileSystem);
-        
         for (const file of filesToCode) {
           setProject(prev => ({ ...prev, currentFile: file }));
           addLog(`Coder: Implementing ${file}...`);
@@ -329,7 +488,6 @@ export default function App() {
             fileSystem: { ...prev.fileSystem, [file]: code }
           }));
         }
-        
         setProject(prev => ({ ...prev, status: "compiling", currentFile: filesToCode[0] }));
         addLog("Coder: All modules implemented. Triggering build...");
       } catch (err) {
@@ -341,11 +499,8 @@ export default function App() {
     const runCompiler = async () => {
       try {
         addLog("Compiler: Running 'npm run build' in WebContainer sandbox...");
-        // Simulated build logic: 30% chance of a "failure" for self-healing demo
         await new Promise(r => setTimeout(r, 1500));
-        
         const shouldFail = Math.random() < 0.3 && project.iterationCount < 1;
-        
         if (shouldFail) {
           addLog("Compiler Error: Module not found. ReferenceError: './components/OldButton' is not defined.");
           setProject(prev => ({ ...prev, status: "healing" }));
@@ -363,10 +518,9 @@ export default function App() {
     const runPatcher = async () => {
       try {
         addLog("Patcher: Analyzing stderr logs. Performing surgical fix...");
-        const failingFile = "src/App.tsx"; // Mock failure file
+        const failingFile = "src/App.tsx";
         const code = project.fileSystem[failingFile];
         const patch = await getPatcherResponse(failingFile, code, "ReferenceError: './components/OldButton' is not defined.");
-        
         setProject(prev => ({
           ...prev,
           fileSystem: { ...prev.fileSystem, [failingFile]: patch },
@@ -387,10 +541,14 @@ export default function App() {
     if (project.status === "compiling") runCompiler();
     if (project.status === "healing") runPatcher();
 
-  }, [project.status, project.userPrompt]);
+  }, [project.status, project.userPrompt, user]);
+
+  if (!user) {
+    return <AuthScreen onLogin={setUser} />;
+  }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0f172a] text-slate-100">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0f172a] text-slate-100 font-sans">
       {/* Header */}
       <header className="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0f172a]/80 backdrop-blur-md z-10">
         <div className="flex items-center gap-3">
@@ -406,9 +564,24 @@ export default function App() {
         <div className="flex items-center gap-6">
           <StatusBadge status={project.status} />
           <div className="h-4 w-[1px] bg-slate-800" />
-          <div className="flex items-center gap-2">
-            <button className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
-              <Settings size={18} />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/50 rounded-full border border-slate-700/50">
+              <UserIcon size={14} className="text-blue-400" />
+              <span className="text-xs font-semibold">{user.username}</span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="p-2 hover:bg-red-400/10 hover:text-red-400 rounded-lg text-slate-400 transition-colors"
+              title="Logout"
+            >
+              <LogOut size={18} />
+            </button>
+            <button 
+              onClick={saveToDisk}
+              className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors"
+              title="Save Workspace (Ctrl+S)"
+            >
+              <Save size={18} className={isSaving ? "text-blue-400" : ""} />
             </button>
             <button 
               onClick={startGeneration}
@@ -424,7 +597,7 @@ export default function App() {
 
       <main className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <div className="w-16 border-r border-slate-800 flex flex-col items-center py-4 gap-6 bg-[#0f172a]">
+        <div className="w-16 border-r border-slate-800 flex flex-col items-center py-4 gap-6 bg-[#0f172a] shrink-0">
           <Files className="text-blue-400" size={20} />
           <MessageSquare className="text-slate-500 hover:text-slate-300 cursor-pointer" size={20} />
           <Layout className="text-slate-500 hover:text-slate-300 cursor-pointer" size={20} />
@@ -442,7 +615,7 @@ export default function App() {
 
         {/* Editor & Preview Area */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex h-10 border-b border-slate-800 px-4 bg-[#0f172a] justify-between">
+          <div className="flex h-10 border-b border-slate-800 px-4 bg-[#0f172a] justify-between items-center">
             <div className="flex h-full">
               <button 
                 onClick={() => setActiveTab('code')}
@@ -460,18 +633,22 @@ export default function App() {
               </button>
             </div>
             
+            <div className="flex items-center gap-4 text-xs font-mono text-slate-500 truncate px-4">
+              {project.currentFile && <span className="opacity-50">{project.currentFile}</span>}
+            </div>
+
             {activeTab === 'code' && (
               <div className="flex items-center gap-1">
                 <button 
                   onClick={triggerUndo} 
-                  className="p-1.5 my-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" 
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" 
                   title="Undo (Ctrl+Z)"
                 >
                   <Undo size={14} />
                 </button>
                 <button 
                   onClick={triggerRedo} 
-                  className="p-1.5 my-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" 
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" 
                   title="Redo (Ctrl+Y)"
                 >
                   <Redo size={14} />
@@ -497,12 +674,13 @@ export default function App() {
                     fontFamily: 'Fira Code',
                     scrollBeyondLastLine: false,
                     readOnly: project.status !== 'ready' && project.status !== 'idle' && project.status !== 'error',
+                    automaticLayout: true,
                   }}
                 />
               </div>
             ) : (
-              <div className="h-full w-full bg-white flex flex-col">
-                <div className="h-8 bg-slate-100 border-b flex items-center px-4 gap-4">
+              <div className="h-full w-full bg-white flex flex-col relative">
+                <div className="h-8 bg-slate-100 border-b flex items-center px-4 gap-4 shrink-0">
                    <div className="flex gap-1.5">
                      <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
                      <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
@@ -522,13 +700,13 @@ export default function App() {
             )}
           </div>
 
-          <div className="h-40">
+          <div className="h-40 shrink-0">
             <Terminal logs={project.terminalLogs} />
           </div>
         </div>
 
         {/* Right Sidebar - Chat / Intent */}
-        <div className="w-80 border-l border-slate-800 flex flex-col bg-[#0f172a]">
+        <div className="w-80 border-l border-slate-800 flex flex-col bg-[#0f172a] shrink-0">
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap className="text-blue-400" size={16} />
@@ -537,16 +715,18 @@ export default function App() {
             {project.status !== 'idle' && (
               <button 
                 onClick={() => {
-                  localStorage.removeItem(STORAGE_KEY);
-                  setProject({
-                    userPrompt: "",
-                    fileSystem: {},
-                    terminalLogs: ["System Reset."],
-                    status: "idle",
-                    iterationCount: 0,
-                    currentFile: null
-                  });
-                  setInput("");
+                  if (confirm("Reset current project workspace? All unsaved work in memory will be lost.")) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    setProject({
+                      userPrompt: "",
+                      fileSystem: {},
+                      terminalLogs: ["System Reset."],
+                      status: "idle",
+                      iterationCount: 0,
+                      currentFile: null
+                    });
+                    setInput("");
+                  }
                 }}
                 className="text-[10px] text-slate-500 hover:text-red-400 transition-colors"
               >
@@ -613,18 +793,25 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="h-8 border-t border-slate-800 bg-[#0f172a] flex items-center justify-between px-4 text-[10px] font-medium text-slate-500">
+      <footer className="h-8 border-t border-slate-800 bg-[#0f172a] flex items-center justify-between px-4 text-[10px] font-medium text-slate-500 shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
             <Zap size={10} className="text-yellow-500" />
             <span>HEALING ENGINE ACTIVE</span>
           </div>
           <div className="h-3 w-[1px] bg-slate-800" />
-          <div className="flex items-center gap-1.5">
-            <Save size={10} className={isSaving ? "text-blue-400 animate-pulse" : "text-slate-500"} />
-            <span className={isSaving ? "text-blue-400" : "text-slate-500"}>
-              {isSaving ? "AUTO-SAVING..." : "ALL CHANGES SAVED"}
-            </span>
+          <div className="flex items-center gap-1.5 min-w-[140px]">
+            {isSaving ? (
+              <div className="flex items-center gap-1.5 text-blue-400">
+                <Loader2 size={10} className="animate-spin" />
+                <span>SAVING CHANGES...</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <CheckCircle2 size={10} className="text-green-500" />
+                <span>SAVED {project.lastSaved ? `@ ${project.lastSaved}` : ''}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4 uppercase tracking-widest">

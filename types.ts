@@ -1,4 +1,8 @@
 
+export interface User {
+  username: string;
+}
+
 export interface DesignSystem {
   metadata: {
     appName: string;
@@ -42,6 +46,7 @@ export interface ProjectState {
   status: AgentStatus;
   iterationCount: number;
   currentFile: string | null;
+  lastSaved?: string;
 }
 
 export interface FileEntry {
