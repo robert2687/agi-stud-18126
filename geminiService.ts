@@ -2,11 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DesignSystem } from "./types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-/**
- * Product Manager Agent: Generates a Software Requirement Specification (SRS)
- */
 export const getManagerResponse = async (prompt: string) => {
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
@@ -33,9 +30,6 @@ export const getManagerResponse = async (prompt: string) => {
   return response.text || "";
 };
 
-/**
- * Planner Agent: Decides the file system structure based on the SRS
- */
 export const getPlannerResponse = async (srs: string) => {
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
@@ -133,7 +127,7 @@ export const getCoderResponse = async (
     
     RULES:
     1. Use Tailwind CSS.
-    2. If this is 'src/lib/mockData.ts', populate it with RICH, REALISTIC dummy data (arrays of objects, etc).
+    2. If this is 'src/lib/mockData.ts', populate it with RICH, REALISTIC dummy data.
     3. Ensure components are accessible.
     4. Use Lucide React for icons.
     
@@ -143,6 +137,62 @@ export const getCoderResponse = async (
     }
   });
   return response.text || "";
+};
+
+/**
+ * Reviewer Agent: Audits the generated codebase for quality and compliance.
+ */
+export const getReviewResponse = async (
+  fileSystem: Record<string, string>,
+  design: DesignSystem
+) => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-pro-preview",
+    contents: `ROLE: You are a Lead Software Engineer and Accessibility Expert.
+    GOAL: Audit this virtual filesystem for Quality, A11y, Performance, and Design Compliance.
+    
+    FILESYSTEM: ${JSON.stringify(fileSystem)}
+    DESIGN SYSTEM: ${JSON.stringify(design)}
+    
+    CRITERIA:
+    1. Quality: Dry code, proper React hooks.
+    2. A11y: Aria labels on interactive elements.
+    3. Performance: No redundant loops.
+    4. Design: Proper use of primary/accent colors from the design system.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          overallScore: { type: Type.NUMBER },
+          scores: {
+            type: Type.OBJECT,
+            properties: {
+              quality: { type: Type.NUMBER },
+              a11y: { type: Type.NUMBER },
+              performance: { type: Type.NUMBER },
+              design: { type: Type.NUMBER },
+            }
+          },
+          comments: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                file: { type: Type.STRING },
+                severity: { type: Type.STRING, description: 'critical, warning, insight' },
+                category: { type: Type.STRING },
+                message: { type: Type.STRING },
+                recommendation: { type: Type.STRING },
+              }
+            }
+          }
+        },
+        required: ["overallScore", "scores", "comments"]
+      },
+    },
+  });
+  return JSON.parse(response.text || "{}");
 };
 
 export const getPatcherResponse = async (

@@ -1,3 +1,4 @@
+
 import React, { ErrorInfo, ReactNode } from 'react';
 import { RefreshCw, Terminal, ShieldAlert, Copy, Check, AlertOctagon } from 'lucide-react';
 
@@ -14,9 +15,11 @@ interface State {
 
 const STORAGE_KEY = 'agentic_studio_pro_v1';
 
+// Fix: Explicitly use React.Component to ensure properties like state, setState, and props are correctly inherited and recognized by TypeScript.
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
+    // Initialize state within constructor correctly.
     this.state = {
       hasError: false,
       error: null,
@@ -31,6 +34,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Agentic Studio Critical Error Boundary Caught:", error, errorInfo);
+    // Use this.setState which is inherited from React.Component.
     this.setState({ errorInfo });
   }
 
@@ -45,28 +49,28 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-    // Capture unhandled promise rejections (async errors)
+    // Capture unhandled promise rejections (async operations).
     const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
     this.setState({
       hasError: true,
       error: reason,
-      errorInfo: { componentStack: 'Unhandled Promise Rejection (Async Operation)' }
+      errorInfo: { componentStack: 'Unhandled Promise Rejection (Async Operation)' } as ErrorInfo
     });
   };
 
   handleGlobalError = (event: ErrorEvent) => {
-    // Capture global errors that bubble up to the window
+    // Capture global errors that bubble up to the window.
     this.setState({
       hasError: true,
       error: event.error || new Error(event.message),
-      errorInfo: { componentStack: `Global Error at ${event.filename}:${event.lineno}` }
+      errorInfo: { componentStack: `Global Error at ${event.filename}:${event.lineno}` } as ErrorInfo
     });
   };
 
   handleRestartWorkflow = () => {
-    // Clear the project state which might be causing the crash to ensure a clean slate
+    // Clear the project state which might be causing the crash to ensure a clean slate.
     localStorage.removeItem(STORAGE_KEY);
-    // Force reload the application
+    // Force reload the application.
     window.location.reload();
   };
 
@@ -75,6 +79,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   handleCopyError = async () => {
+    // Using this.state to access component state safely.
     const text = `Error: ${this.state.error?.toString()}\n\nStack Trace:\n${this.state.error?.stack || 'N/A'}\n\nComponent Stack:\n${this.state.errorInfo?.componentStack || 'N/A'}`;
     try {
       await navigator.clipboard.writeText(text);
@@ -86,6 +91,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   render() {
+    // Check for errors using this.state.
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6 text-slate-200 font-sans">
@@ -192,6 +198,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
+    // Standard class property to access children via this.props.
     return this.props.children;
   }
 }

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   Play, 
@@ -27,115 +28,284 @@ import {
   Clock,
   ClipboardList,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Activity,
+  HardDrive,
+  BarChart3,
+  Lightbulb,
+  RefreshCw,
+  History as HistoryIcon,
+  GitBranch,
+  SplitSquareHorizontal,
+  RotateCcw,
+  Palette,
+  Layers,
+  Box,
+  ShieldCheck,
+  FileCheck,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
-import Editor, { OnMount } from "@monaco-editor/react";
-import { ProjectState, AgentStatus, DesignSystem, User } from './types';
+import Editor, { DiffEditor, OnMount } from "@monaco-editor/react";
+import { ProjectState, AgentStatus, DesignSystem, User, ResourceMetrics, OptimizationSuggestion, HistorySnapshot, ReviewReport, ReviewComment } from './types';
 import { 
   getManagerResponse,
   getPlannerResponse, 
   getDesignerResponse, 
   getCoderResponse, 
-  getPatcherResponse 
+  getPatcherResponse,
+  getReviewResponse
 } from './geminiService';
 
 // --- Constants ---
-const STORAGE_KEY = 'agentic_studio_pro_v1';
+const STORAGE_KEY = 'agentic_studio_pro_v2';
 const AUTH_KEY = 'agentic_studio_auth';
 const SESSION_KEY = 'agentic_studio_session';
 
 const getFileLanguage = (filename: string | null) => {
   if (!filename) return "plaintext";
   const lower = filename.toLowerCase();
-  
-  // Specific full filenames
-  if (lower === 'dockerfile') return 'dockerfile';
-  if (lower === 'makefile') return 'makefile';
-  if (lower === 'cmakelists.txt') return 'cmake';
-  if (lower === 'jenkinsfile') return 'groovy';
-  if (lower === 'vite.config.js' || lower === 'vite.config.ts') return 'javascript';
-  if (lower === 'next.config.js') return 'javascript';
-  
-  // Dotfiles
-  if (lower.startsWith('.env')) return 'ini';
-  if (lower.startsWith('.babelrc')) return 'json';
-  if (lower.startsWith('.eslintrc')) return 'json';
-  if (lower.startsWith('.prettierrc')) return 'json';
-  if (lower === '.gitignore' || lower === '.npmignore') return 'plaintext';
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
+  if (lower.endsWith('.js') || lower.endsWith('.jsx')) return 'javascript';
+  if (lower.endsWith('.css')) return 'css';
+  if (lower.endsWith('.html')) return 'html';
+  if (lower.endsWith('.json')) return 'json';
+  return 'plaintext';
+};
 
-  const ext = filename.split('.').pop()?.toLowerCase();
-  
-  // Extension mapping
-  const map: Record<string, string> = {
-    // TypeScript / JavaScript
-    ts: "typescript",
-    tsx: "typescript",
-    js: "javascript",
-    jsx: "javascript",
-    mjs: "javascript",
-    cjs: "javascript",
-    
-    // Web
-    html: "html",
-    htm: "html",
-    css: "css",
-    scss: "scss",
-    less: "less",
-    sass: "scss",
-    json: "json",
-    xml: "xml",
-    svg: "xml",
-    yaml: "yaml",
-    yml: "yaml",
-    md: "markdown",
-    markdown: "markdown",
-    
-    // Backend / Systems
-    py: "python",
-    go: "go",
-    rs: "rust",
-    java: "java",
-    c: "c",
-    cpp: "cpp",
-    h: "cpp",
-    hpp: "cpp",
-    cs: "csharp",
-    php: "php",
-    
-    // Scripts / Config
-    sh: "shell",
-    bash: "shell",
-    zsh: "shell",
-    bat: "bat",
-    ps1: "powershell",
-    ini: "ini",
-    toml: "ini",
-    sql: "sql",
-    
-    // Other
-    rb: "ruby",
-    lua: "lua",
-    r: "r",
-    dart: "dart",
-    swift: "swift",
-    kt: "kotlin",
-    pl: "perl",
-    
-    // Framework specific (fallback to html or similar)
-    vue: "html",
-    svelte: "html",
-    astro: "html",
-    
-    // Text
-    txt: "plaintext",
-    log: "plaintext"
+// --- Neural Audit Panel ---
+const NeuralAuditPanel: React.FC<{ 
+  report: ReviewReport | null, 
+  onFix: (comment: ReviewComment) => void 
+}> = ({ report, onFix }) => {
+  if (!report) return (
+    <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-4">
+      <ShieldCheck size={48} className="text-slate-800" />
+      <p className="text-xs text-slate-500 font-medium">No active audit reports. Initiate a Neural Cycle to audit the codebase.</p>
+    </div>
+  );
+
+  const getSeverityStyles = (severity: string) => {
+    switch(severity) {
+      case 'critical': return 'border-red-500/30 bg-red-500/5 text-red-200';
+      case 'warning': return 'border-yellow-500/30 bg-yellow-500/5 text-yellow-200';
+      default: return 'border-blue-500/30 bg-blue-500/5 text-blue-200';
+    }
   };
 
-  return map[ext || ""] || "plaintext";
+  const getSeverityIcon = (severity: string) => {
+    switch(severity) {
+      case 'critical': return <AlertCircle size={14} className="text-red-500" />;
+      case 'warning': return <AlertTriangle size={14} className="text-yellow-500" />;
+      default: return <Info size={14} className="text-blue-500" />;
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[#0f172a] p-4 space-y-6 overflow-y-auto">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={16} className="text-emerald-400" />
+          <span className="text-xs font-bold uppercase tracking-wider">Neural Audit v1</span>
+        </div>
+        <div className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded text-[10px] font-bold text-emerald-400">
+          SCORE: {report.overallScore}%
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {Object.entries(report.scores).map(([key, val]) => (
+          <div key={key} className="p-2 bg-slate-900 border border-slate-800 rounded-lg">
+            <div className="text-[9px] uppercase font-bold text-slate-500 mb-1">{key}</div>
+            <div className="text-sm font-mono text-white">{val}%</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <span className="text-[10px] font-bold uppercase text-slate-500">Pull Request Feedback</span>
+        {report.comments.map((comment, idx) => (
+          <div key={idx} className={`p-3 rounded-xl border text-[10px] space-y-2 transition-all hover:scale-[1.02] ${getSeverityStyles(comment.severity)}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                {getSeverityIcon(comment.severity)}
+                <span className="font-bold uppercase tracking-tighter">{comment.category}</span>
+              </div>
+              <span className="font-mono opacity-50">{comment.file}</span>
+            </div>
+            <p className="leading-relaxed opacity-90">{comment.message}</p>
+            <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+              <span className="italic opacity-60">Rec: {comment.recommendation}</span>
+              <button 
+                onClick={() => onFix(comment)}
+                className="px-2 py-1 bg-white/10 hover:bg-white/20 rounded flex items-center gap-1 transition-colors"
+              >
+                <RefreshCw size={10} /> FIX
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// --- Theme Laboratory Component ---
+const ThemeLaboratory: React.FC<{ 
+  design: DesignSystem | undefined, 
+  updateDesign: (d: DesignSystem) => void,
+  onSync: () => void 
+}> = ({ design, updateDesign, onSync }) => {
+  if (!design) return <div className="p-4 text-slate-500 text-[10px]">Initialize a project to unlock the Laboratory.</div>;
+
+  const handleChange = (path: string, value: string) => {
+    const newDesign = { ...design };
+    const keys = path.split('.');
+    let current: any = newDesign;
+    for (let i = 0; i < keys.length - 1; i++) current = current[keys[i]];
+    current[keys[keys.length - 1]] = value;
+    updateDesign(newDesign);
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[#0f172a] p-4 space-y-6 overflow-y-auto">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Palette size={16} className="text-indigo-400" />
+          <span className="text-xs font-bold uppercase tracking-wider">Theme Laboratory</span>
+        </div>
+        <button onClick={onSync} title="Publish to Neural Engine" className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600 rounded text-indigo-400 hover:text-white transition-all">
+          <Save size={14} />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <div className="space-y-3">
+          <span className="text-[10px] font-bold uppercase text-slate-500">Core Spectrum</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[9px] text-slate-400">Primary</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={design.colors.primary} onChange={(e) => handleChange('colors.primary', e.target.value)} className="w-6 h-6 rounded border-none bg-transparent cursor-pointer" />
+                <span className="text-[9px] font-mono text-slate-500">{design.colors.primary}</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] text-slate-400">Accent</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={design.colors.accent} onChange={(e) => handleChange('colors.accent', e.target.value)} className="w-6 h-6 rounded border-none bg-transparent cursor-pointer" />
+                <span className="text-[9px] font-mono text-slate-500">{design.colors.accent}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <span className="text-[10px] font-bold uppercase text-slate-500">Geometric Logic</span>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[9px] text-slate-400">
+                <label>Radius</label>
+                <span>{design.layout.radius}</span>
+              </div>
+              <input 
+                type="range" min="0" max="32" step="2"
+                value={parseInt(design.layout.radius)} 
+                onChange={(e) => handleChange('layout.radius', `${e.target.value}px`)}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" 
+              />
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[9px] text-slate-400">
+                <label>Spacing Scale</label>
+                <span>{design.layout.spacing}</span>
+              </div>
+              <input 
+                type="range" min="2" max="12" step="1"
+                value={parseInt(design.layout.spacing)} 
+                onChange={(e) => handleChange('layout.spacing', `${e.target.value}px`)}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" 
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <span className="text-[10px] font-bold uppercase text-slate-500">Vibe Selection</span>
+          <div className="grid grid-cols-2 gap-2">
+            {["Modern", "Brutalist", "Minimalist", "Corporate"].map(v => (
+              <button 
+                key={v}
+                onClick={() => handleChange('metadata.styleVibe', v as any)}
+                className={`px-2 py-2 rounded text-[9px] font-bold border transition-all ${design.metadata.styleVibe === v ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700'}`}
+              >
+                {v.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- History Sidebar Component ---
+const HistoryTimeline: React.FC<{ 
+  snapshots: HistorySnapshot[], 
+  selectedId: string | null, 
+  onSelect: (id: string | null) => void,
+  onRollback: (id: string) => void
+}> = ({ snapshots, selectedId, onSelect, onRollback }) => {
+  return (
+    <div className="flex flex-col h-full bg-[#020617] border-r border-slate-800 w-12 hover:w-64 transition-all duration-300 group z-20">
+      <div className="p-4 flex items-center gap-3 border-b border-slate-800 overflow-hidden shrink-0">
+        <HistoryIcon size={18} className="text-blue-400 shrink-0" />
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">Neural History</span>
+      </div>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-4">
+        <div 
+          onClick={() => onSelect(null)}
+          className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all ${!selectedId ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' : 'text-slate-500 hover:bg-slate-800 border border-transparent'}`}
+        >
+          <GitBranch size={16} className="shrink-0" />
+          <div className="text-[10px] font-bold uppercase whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">HEAD (Active)</div>
+        </div>
+
+        <div className="relative pl-4 space-y-6">
+          <div className="absolute left-4 top-0 bottom-0 w-px bg-slate-800" />
+          {[...snapshots].reverse().map((s) => (
+            <div key={s.id} className="relative group/item">
+              <div 
+                className={`absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-[#020617] transition-all z-10 ${selectedId === s.id ? 'bg-blue-400 scale-125 shadow-[0_0_8px_rgba(96,165,250,0.5)]' : 'bg-slate-600 group-hover/item:bg-slate-400'}`} 
+              />
+              <div 
+                onClick={() => onSelect(s.id)}
+                className={`ml-4 p-2 rounded-lg cursor-pointer border transition-all ${selectedId === s.id ? 'bg-slate-800 border-slate-700' : 'border-transparent hover:bg-slate-900'}`}
+              >
+                <div className="flex flex-col gap-1 overflow-hidden">
+                  <span className={`text-[10px] font-bold uppercase whitespace-nowrap transition-opacity opacity-0 group-hover:opacity-100 ${selectedId === s.id ? 'text-white' : 'text-slate-400'}`}>{s.label}</span>
+                  <div className="flex items-center justify-between gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[9px] font-mono text-slate-600">{new Date(s.timestamp).toLocaleTimeString()}</span>
+                    {selectedId === s.id && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onRollback(s.id); }}
+                        className="text-[9px] font-bold text-blue-400 hover:text-white flex items-center gap-1"
+                      >
+                        <RotateCcw size={10} /> RESTORE
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // --- Auth Component ---
-
 const AuthScreen: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
@@ -144,27 +314,17 @@ const AuthScreen: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) =>
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    
-    if (!username || !password) {
-      setError('Please fill in all fields.');
-      return;
-    }
-
+    if (!username || !password) { setError('Please fill in all fields.'); return; }
     const users = JSON.parse(localStorage.getItem(AUTH_KEY) || '{}');
-
     if (isLogin) {
       if (users[username] && users[username] === password) {
         const user = { username };
         localStorage.setItem(SESSION_KEY, JSON.stringify(user));
         onLogin(user);
-      } else {
-        setError('Invalid username or password.');
-      }
+      } else { setError('Invalid username or password.'); }
     } else {
-      if (users[username]) {
-        setError('Username already exists.');
-      } else {
+      if (users[username]) { setError('Username already exists.'); }
+      else {
         users[username] = password;
         localStorage.setItem(AUTH_KEY, JSON.stringify(users));
         const user = { username };
@@ -176,219 +336,73 @@ const AuthScreen: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) =>
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse" />
-      </div>
-
       <div className="w-full max-w-md bg-[#0f172a]/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-8 z-10">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20 mb-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl mb-4">
             <Cpu className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white uppercase">Agentic Studio <span className="text-blue-400">Pro</span></h1>
-          <p className="text-slate-400 text-sm font-medium mt-1">THE SELF-HEALING ENGINE</p>
+          <p className="text-slate-400 text-sm font-medium mt-1">NEURAL AUDIT ENGINE</p>
         </div>
-
         <form onSubmit={handleAuth} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Username</label>
-            <div className="relative">
-              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="developer_pro"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl py-3 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          {error && <p className="text-red-400 text-xs font-medium bg-red-400/10 p-3 rounded-lg border border-red-400/20">{error}</p>}
-
-          <button
-            type="submit"
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 group"
-          >
-            {isLogin ? 'LOG IN' : 'SIGN UP'}
-            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-          </button>
+          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" placeholder="Username" />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" placeholder="Password" />
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all">{isLogin ? 'LOG IN' : 'SIGN UP'}</button>
         </form>
-
-        <div className="mt-8 text-center">
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-sm text-slate-400 hover:text-blue-400 transition-colors"
-          >
-            {isLogin ? "Don't have an account? Sign up" : "Already have an account? Log in"}
-          </button>
-        </div>
+        <button onClick={() => setIsLogin(!isLogin)} className="w-full mt-4 text-sm text-slate-400 hover:text-blue-400 transition-colors">{isLogin ? "Need an account? Sign up" : "Have an account? Log in"}</button>
       </div>
     </div>
   );
 };
 
-// --- IDE Components ---
-
-const StatusBadge: React.FC<{ status: AgentStatus }> = ({ status }) => {
-  const config = {
-    idle: { color: 'bg-slate-500', icon: <Cpu size={14}/>, text: 'Idle' },
-    managing: { color: 'bg-indigo-600', icon: <ClipboardList size={14} className="animate-pulse"/>, text: 'Manager' },
-    planning: { color: 'bg-blue-500', icon: <Zap size={14}/>, text: 'Planner' },
-    designing: { color: 'bg-purple-500', icon: <Layout size={14}/>, text: 'Designer' },
-    architecting: { color: 'bg-indigo-500', icon: <Files size={14}/>, text: 'Architect' },
-    coding: { color: 'bg-emerald-500', icon: <Code2 size={14} className="animate-pulse"/>, text: 'Coder' },
-    compiling: { color: 'bg-orange-500', icon: <Loader2 size={14} className="animate-spin"/>, text: 'Compiler' },
-    healing: { color: 'bg-red-500', icon: <Zap size={14} className="animate-bounce"/>, text: 'Patcher' },
-    ready: { color: 'bg-green-500', icon: <CheckCircle2 size={14}/>, text: 'Ready' },
-    error: { color: 'bg-red-700', icon: <AlertCircle size={14}/>, text: 'Halted' }
+// --- Resource Manager Panel ---
+const ResourceMonitor: React.FC<{ metrics: ResourceMetrics, suggestions: OptimizationSuggestion[], onRestart: () => void }> = ({ metrics, suggestions, onRestart }) => {
+  const getProgressColor = (val: number) => {
+    if (val > 90) return 'bg-red-500';
+    if (val > 70) return 'bg-orange-500';
+    return 'bg-blue-500';
   };
 
-  const active = config[status] || config.idle;
-
   return (
-    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${active.color} text-white transition-all duration-300 shadow-lg`}>
-      {active.icon}
-      <span>{active.text.toUpperCase()}</span>
-    </div>
-  );
-};
-
-const FileExplorer: React.FC<{ 
-  files: string[]; 
-  activeFile: string | null; 
-  onFileSelect: (f: string) => void 
-}> = ({ files, activeFile, onFileSelect }) => {
-  return (
-    <div className="flex flex-col h-full bg-[#0f172a] border-r border-slate-800 w-64 shrink-0">
-      <div className="p-4 border-b border-slate-800 flex items-center gap-2 text-slate-400 font-medium">
-        <Files size={18} />
-        <span className="text-sm">FILES</span>
-      </div>
-      <div className="flex-1 overflow-y-auto py-2">
-        {files.length === 0 ? (
-          <div className="p-4 text-xs text-slate-500 italic text-center">No files generated yet.</div>
-        ) : (
-          files.map(file => (
-            <button
-              key={file}
-              onClick={() => onFileSelect(file)}
-              className={`w-full text-left px-4 py-1.5 flex items-center gap-2 text-xs transition-colors hover:bg-slate-800 ${activeFile === file ? 'bg-slate-800 text-blue-400 border-l-2 border-blue-400' : 'text-slate-400'}`}
-            >
-              <FileCode size={14} />
-              <span className="truncate">{file}</span>
-            </button>
-          ))
-        )}
-      </div>
-    </div>
-  );
-};
-
-const Terminal: React.FC<{ logs: string[] }> = ({ logs }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  return (
-    <div className="h-full bg-[#020617] p-4 font-mono text-xs overflow-y-auto border-t border-slate-800" ref={scrollRef}>
-      <div className="flex items-center gap-2 text-slate-500 mb-2">
-        <TerminalIcon size={14} />
-        <span className="font-bold">TERMINAL</span>
-      </div>
-      {logs.map((log, i) => (
-        <div key={i} className={`mb-1 ${log.includes('Error') || log.includes('failed') ? 'text-red-400' : log.includes('Success') || log.includes('done') ? 'text-green-400' : 'text-slate-300'}`}>
-          <span className="text-slate-600 mr-2">[{new Date().toLocaleTimeString()}]</span>
-          {log}
+    <div className="flex flex-col h-full bg-[#0f172a] p-4 space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity size={16} className="text-blue-400" />
+          <span className="text-xs font-bold uppercase tracking-wider">Resource Manager</span>
         </div>
-      ))}
-    </div>
-  );
-};
-
-const IframePreview = React.memo(({ designSystem, status }: { designSystem?: DesignSystem, status: AgentStatus }) => {
-  return (
-    <iframe 
-      title="preview"
-      className="flex-1 w-full border-none h-full bg-white"
-      srcDoc={`
-        <html>
-          <head>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <style>
-              body { font-family: sans-serif; background: ${designSystem?.colors?.background || '#f8fafc'}; color: ${designSystem?.colors?.foreground || '#0f172a'}; margin: 0; }
-              .btn-primary { background-color: ${designSystem?.colors?.primary || '#2563eb'}; color: ${designSystem?.colors?.primaryForeground || '#ffffff'}; }
-            </style>
-          </head>
-          <body class="flex items-center justify-center min-h-screen p-4">
-            <div class="text-center p-8 bg-white shadow-xl rounded-2xl max-w-md border border-slate-100 transition-all hover:scale-[1.02]">
-              <h1 class="text-2xl font-bold text-slate-800 mb-4">${designSystem?.metadata.appName || 'Application Ready'}</h1>
-              <p class="text-slate-500 mb-6 text-sm">
-                Your browser-native environment has been successfully deployed and self-healed. 
-                The agents have completed the architectural cycle for: 
-                <span class="block mt-2 font-mono text-[10px] bg-slate-100 p-2 rounded text-slate-700">${designSystem?.metadata.styleVibe || 'Modern'} Vibe</span>
-              </p>
-              <button class="btn-primary px-6 py-2 rounded-lg font-semibold transition-all shadow-md active:scale-95">
-                GET STARTED
-              </button>
-              <div class="mt-8 pt-6 border-t border-slate-100 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-                Agentic Studio Pro Runtime v1.0.4
-              </div>
-            </div>
-          </body>
-        </html>
-      `}
-    />
-  );
-}, (prev, next) => {
-  // Optimization: 
-  // 1. If we are not ready in the next state, we don't need to update the iframe (it will be hidden).
-  if (next.status !== 'ready') return true;
-
-  // 2. If we are transitioning to 'ready', we must re-render to ensure content is up-to-date.
-  if (prev.status !== 'ready' && next.status === 'ready') return false;
-
-  // 3. If we are already ready, only re-render if the design system has actually changed.
-  return JSON.stringify(prev.designSystem) === JSON.stringify(next.designSystem);
-});
-
-const PreviewSystem = ({ status, designSystem }: { status: AgentStatus; designSystem?: DesignSystem }) => {
-  const isReady = status === 'ready';
-
-  return (
-    <div className="flex-1 flex flex-col relative overflow-hidden h-full">
-      {/* 
-        Keep iframe mounted but hidden when not ready to preserve state and avoid unnecessary reloads.
-        We use CSS visibility/opacity+pointer-events to hide it rather than unmounting.
-      */}
-      <div className={`absolute inset-0 transition-opacity duration-500 ${isReady ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>
-        <IframePreview designSystem={designSystem} status={status} />
+        <button onClick={onRestart} title="Restart WebContainer" className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-blue-400 transition-colors">
+          <RefreshCw size={14} />
+        </button>
       </div>
 
-      <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-50/90 backdrop-blur-sm text-slate-400 text-sm gap-4 transition-all duration-300 ${isReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <Loader2 size={32} className="animate-spin text-blue-500" />
-        <div className="text-center">
-          <p className="font-bold text-slate-600">Awaiting system compilation...</p>
-          <p className="text-[10px] uppercase tracking-widest mt-1 opacity-60">Phase: {status}</p>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-[10px] uppercase font-bold text-slate-500">
+            <span>CPU Load</span>
+            <span>{metrics.cpu.toFixed(1)}%</span>
+          </div>
+          <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div className={`h-full transition-all duration-500 ${getProgressColor(metrics.cpu)}`} style={{ width: `${metrics.cpu}%` }} />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-[10px] uppercase font-bold text-slate-500">
+            <span>Memory Usage</span>
+            <span>{metrics.memory} MB</span>
+          </div>
+          <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div className={`h-full transition-all duration-500 ${getProgressColor((metrics.memory / 1024) * 100)}`} style={{ width: `${(metrics.memory / 1024) * 100}%` }} />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between p-2 bg-slate-900/50 rounded-lg border border-slate-800">
+          <div className="flex items-center gap-2">
+            <HardDrive size={12} className="text-slate-500" />
+            <span className="text-[10px] text-slate-400">VFS Size</span>
+          </div>
+          <span className="text-[10px] font-mono text-blue-400">{metrics.vfsSize} KB</span>
         </div>
       </div>
     </div>
@@ -396,7 +410,6 @@ const PreviewSystem = ({ status, designSystem }: { status: AgentStatus; designSy
 };
 
 // --- Main App ---
-
 export default function App() {
   const [user, setUser] = useState<User | null>(() => {
     const session = localStorage.getItem(SESSION_KEY);
@@ -406,195 +419,125 @@ export default function App() {
   const [project, setProject] = useState<ProjectState>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return { 
-          ...parsed, 
-          // If status was in an active agent state, reset to idle to prevent stuck states.
-          // If ready or error, preserve it.
-          status: ['ready', 'error', 'idle'].includes(parsed.status) ? parsed.status : 'idle',
-          terminalLogs: [...(parsed.terminalLogs || []), `> Workspace restored. Last saved: ${parsed.lastSaved || 'N/A'}`],
-          // Restore active tab or default based on status
-          activeTab: parsed.activeTab || (parsed.status === 'ready' ? 'preview' : 'code'),
-          editorViewState: parsed.editorViewState || {}
-        };
-      } catch (e) {
-        console.error("Failed to parse saved project state", e);
-      }
+      const parsed = JSON.parse(saved);
+      return { 
+        ...parsed, 
+        status: ['ready', 'error', 'idle'].includes(parsed.status) ? parsed.status : 'idle',
+        resources: parsed.resources || { cpu: 0, memory: 0, vfsSize: 0, processes: [] },
+        suggestions: parsed.suggestions || [],
+        history: parsed.history || [],
+        selectedHistoryId: null,
+        activeReview: parsed.activeReview || null
+      };
     }
     return {
       userPrompt: "",
       fileSystem: {},
-      terminalLogs: ["Welcome to Agentic Studio Pro. Define your intent to begin."],
+      terminalLogs: ["Neural link established."],
       status: "idle",
       iterationCount: 0,
       currentFile: null,
       activeTab: 'code',
-      editorViewState: {}
+      resources: { cpu: 1.2, memory: 124, vfsSize: 0, processes: ['init'] },
+      suggestions: [],
+      history: [],
+      selectedHistoryId: null,
+      activeReview: null
     };
   });
 
   const [input, setInput] = useState(project.userPrompt);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isZenMode, setIsZenMode] = useState(false);
-  const editorRef = useRef<any>(null);
+  const [sidebarTab, setSidebarTab] = useState<'resources' | 'theme' | 'audit'>('resources');
   
-  // Ref to hold current project state for event listeners and stable access
-  const projectRef = useRef(project);
-
+  // Persistence
   useEffect(() => {
-    projectRef.current = project;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
   }, [project]);
 
-  // Enhanced Auto-save Logic
-  const saveToDisk = useCallback(() => {
-    if (!user || !projectRef.current) return;
-    setIsSaving(true);
-    
-    // Capture current view state if editor is active and valid
-    let currentViewState = { ...projectRef.current.editorViewState };
-    if (editorRef.current && projectRef.current.currentFile && projectRef.current.activeTab === 'code') {
-      const viewState = editorRef.current.saveViewState();
-      if (viewState) {
-         currentViewState = {
-           ...currentViewState,
-           [projectRef.current.currentFile]: viewState
-         };
-      }
-    }
-
-    const now = new Date().toLocaleTimeString();
-    // Use projectRef.current to avoid closure staleness and ensure we have latest data
-    const updatedProject = { 
-      ...projectRef.current, 
-      lastSaved: now,
-      editorViewState: currentViewState
-    };
-    
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProject));
-    } catch (e) {
-      console.error("Auto-save failed:", e);
-    }
-    
-    // Update state to sync lastSaved and viewState without triggering loops (since effect depends on project props)
-    setProject(prev => ({ 
-      ...prev, 
-      lastSaved: now,
-      editorViewState: currentViewState
-    }));
-    
-    // Simulate network delay for UI feedback
-    setTimeout(() => setIsSaving(false), 800);
-  }, [user]);
-
-  // Save on unmount / visibility change (tab switch)
-  useEffect(() => {
-    const handleSaveOnExit = () => {
-      // Use saveToDisk logic manually here to ensure synchronous execution if needed, 
-      // but keeping it simple with direct storage access is safer for unload events.
-      if (user && projectRef.current) {
-        const now = new Date().toLocaleTimeString();
-        const stateToSave = { ...projectRef.current, lastSaved: now };
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
-        } catch(e) { console.error("Exit save failed", e); }
-      }
-    };
-
-    window.addEventListener('beforeunload', handleSaveOnExit);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        handleSaveOnExit();
-      }
+  // Snapshot Capture Helper
+  const captureSnapshot = useCallback((label: string) => {
+    setProject(prev => {
+      const snapshot: HistorySnapshot = {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: Date.now(),
+        label,
+        status: prev.status,
+        fileSystem: { ...prev.fileSystem },
+        designSystem: prev.designSystem ? { ...prev.designSystem } : undefined,
+        terminalLogs: [...prev.terminalLogs],
+        reviewReport: prev.activeReview || undefined
+      };
+      return { ...prev, history: [...prev.history, snapshot] };
     });
+  }, []);
 
-    return () => {
-      window.removeEventListener('beforeunload', handleSaveOnExit);
-      document.removeEventListener('visibilitychange', handleSaveOnExit);
-    };
-  }, [user]);
-
-  // Periodic auto-save (Debounced)
-  useEffect(() => {
-    if (!user) return;
-    // Debounce save when filesystem, current file, user prompt, or activeTab changes
-    const timeoutId = setTimeout(saveToDisk, 2000); // 2 seconds debounce
-    return () => clearTimeout(timeoutId);
-  }, [project.fileSystem, project.currentFile, project.userPrompt, project.status, project.activeTab, user, saveToDisk]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        saveToDisk();
-      }
-      if (e.key === 'Escape' && isZenMode) {
-        setIsZenMode(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [saveToDisk, isZenMode]);
-
-  // Restore Editor View State when active file changes
-  useEffect(() => {
-    if (project.activeTab === 'code' && project.currentFile && editorRef.current && project.editorViewState?.[project.currentFile]) {
-      // Small timeout to allow model switch to propagate
-      setTimeout(() => {
-        if(editorRef.current) {
-          editorRef.current.restoreViewState(project.editorViewState![project.currentFile!]);
-          editorRef.current.focus();
-        }
-      }, 50);
-    }
-  }, [project.currentFile, project.activeTab]);
-
-  const addLog = (msg: string) => {
-    setProject(prev => ({ ...prev, terminalLogs: [...prev.terminalLogs, msg] }));
-  };
-
-  const handleEditorDidMount: OnMount = (editor, monaco) => {
-    editorRef.current = editor;
-  };
-
-  const handleFileSelect = (filename: string) => {
-    if (filename === project.currentFile) return;
-
-    // Save current file's view state before switching
-    let newViewState = { ...project.editorViewState };
-    if (editorRef.current && project.currentFile) {
-      const currentViewState = editorRef.current.saveViewState();
-      if (currentViewState) {
-        newViewState[project.currentFile] = currentViewState;
-      }
-    }
-
-    setProject(prev => ({ 
-      ...prev, 
-      currentFile: filename,
-      editorViewState: newViewState
+  // Rollback Handler
+  const handleRollback = (id: string) => {
+    const snap = project.history.find(s => s.id === id);
+    if (!snap) return;
+    setProject(prev => ({
+      ...prev,
+      fileSystem: { ...snap.fileSystem },
+      designSystem: snap.designSystem ? { ...snap.designSystem } : prev.designSystem,
+      status: 'ready',
+      terminalLogs: [...prev.terminalLogs, `> Restored to checkpoint: ${snap.label}`],
+      activeReview: snap.reviewReport || null,
+      selectedHistoryId: null
     }));
   };
 
-  const triggerUndo = () => {
-    if (editorRef.current) {
-      editorRef.current.trigger('source', 'undo', null);
-      editorRef.current.focus();
-    }
+  // Fix Audit Comment Handler
+  const handleFixAudit = async (comment: ReviewComment) => {
+    const currentCode = project.fileSystem[comment.file];
+    if (!currentCode) return;
+    
+    setProject(prev => ({ 
+      ...prev, 
+      status: 'healing', 
+      terminalLogs: [...prev.terminalLogs, `> Neural Auditor suggesting surgical fix for ${comment.file}: ${comment.recommendation}`] 
+    }));
+    
+    const patchedCode = await getPatcherResponse(comment.file, currentCode, `Code Audit Issue: ${comment.message}. Fix: ${comment.recommendation}`);
+    
+    setProject(prev => ({
+      ...prev,
+      fileSystem: { ...prev.fileSystem, [comment.file]: patchedCode },
+      status: 'ready',
+      terminalLogs: [...prev.terminalLogs, `> Fixed audit issue in ${comment.file}.`]
+    }));
+    captureSnapshot(`Auditor Fix: ${comment.file}`);
   };
 
-  const triggerRedo = () => {
-    if (editorRef.current) {
-      editorRef.current.trigger('source', 'redo', null);
-      editorRef.current.focus();
-    }
-  };
+  // --- Simulated Resource Loop ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProject(prev => {
+        let cpuTarget = 1.5;
+        let memBase = 120 + Object.keys(prev.fileSystem).length * 10;
+        let procs = ['vfs', 'node'];
 
-  const handleLogout = () => {
-    localStorage.removeItem(SESSION_KEY);
-    setUser(null);
-  };
+        if (['coding', 'reviewing'].includes(prev.status)) {
+          cpuTarget = 65 + Math.random() * 20;
+          memBase += 200;
+          procs.push(prev.status === 'coding' ? 'gemini-coder' : 'gemini-reviewer');
+        }
+
+        const newCpu = prev.resources.cpu + (cpuTarget - prev.resources.cpu) * 0.1;
+        const vfsSize = Object.keys(prev.fileSystem).reduce((acc: number, key: string) => acc + (prev.fileSystem[key]?.length || 0), 0) / 1024;
+        
+        return {
+          ...prev,
+          resources: {
+            cpu: newCpu,
+            memory: Math.round(memBase + (Math.random() * 5)),
+            vfsSize: Math.round(vfsSize),
+            processes: procs
+          }
+        };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const startGeneration = async () => {
     if (!input) return;
@@ -602,445 +545,224 @@ export default function App() {
       ...prev,
       userPrompt: input,
       status: "managing",
-      terminalLogs: [...prev.terminalLogs, `> Starting workflow for: "${input}"`],
       fileSystem: {},
-      srs: undefined,
-      plan: undefined,
-      designSystem: undefined,
-      iterationCount: 0,
-      activeTab: 'code',
-      editorViewState: {}
+      terminalLogs: [...prev.terminalLogs, `> Project Intent: "${input}"`],
+      history: [],
+      selectedHistoryId: null,
+      activeReview: null
     }));
-  };
-
-  const handleEditorChange = (value: string | undefined) => {
-    if (project.currentFile && value !== undefined) {
-      setProject(prev => ({
-        ...prev,
-        fileSystem: { ...prev.fileSystem, [prev.currentFile!]: value }
-      }));
-    }
   };
 
   useEffect(() => {
     if (!user) return;
-
-    const runManager = async () => {
-      try {
-        addLog("Manager: Generating Software Requirement Specification (SRS)...");
-        const srs = await getManagerResponse(project.userPrompt);
-        setProject(prev => ({ ...prev, srs, status: "planning" }));
-        addLog("Manager: Technical blueprint completed.");
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Manager: ${err}`);
-      }
+    const executeCycle = async () => {
+       if (project.status === "managing") {
+         const srs = await getManagerResponse(project.userPrompt);
+         setProject(prev => ({ ...prev, srs, status: "planning" }));
+         captureSnapshot("SRS Created");
+       }
+       if (project.status === "planning") {
+         const plan = await getPlannerResponse(project.srs!);
+         setProject(prev => ({ ...prev, plan, status: "designing" }));
+         captureSnapshot("Plan Finalized");
+       }
+       if (project.status === "designing") {
+         const design = await getDesignerResponse(project.userPrompt, project.plan!.features);
+         setProject(prev => ({ ...prev, designSystem: design, status: "architecting" }));
+         captureSnapshot("Design Seeded");
+       }
+       if (project.status === "architecting") {
+         const initialFS: Record<string, string> = {};
+         project.plan!.files.forEach(f => { initialFS[f] = "// Initializing..."; });
+         setProject(prev => ({ ...prev, fileSystem: initialFS, status: "coding" }));
+         captureSnapshot("FS Scaffolding");
+       }
+       if (project.status === "coding") {
+         const files = Object.keys(project.fileSystem);
+         for (const file of files) {
+           setProject(prev => ({ ...prev, currentFile: file }));
+           const code = await getCoderResponse(file, project.plan!, project.designSystem!, project.fileSystem);
+           setProject(prev => ({ 
+             ...prev, 
+             fileSystem: { ...prev.fileSystem, [file]: code }
+           }));
+         }
+         setProject(prev => ({ ...prev, status: "reviewing" }));
+         captureSnapshot("Implementation Complete");
+       }
+       if (project.status === "reviewing") {
+         setProject(prev => ({ ...prev, terminalLogs: [...prev.terminalLogs, "> Running Neural Auditor..."] }));
+         const review = await getReviewResponse(project.fileSystem, project.designSystem!);
+         setProject(prev => ({ 
+           ...prev, 
+           activeReview: review, 
+           status: "compiling", 
+           sidebarTab: 'audit' 
+         }));
+         captureSnapshot("Neural Audit Complete");
+       }
+       if (project.status === "compiling") {
+         await new Promise(r => setTimeout(r, 1000));
+         setProject(prev => ({ ...prev, status: "ready", activeTab: 'preview' }));
+         captureSnapshot("Ready for Deployment");
+       }
     };
+    executeCycle();
+  }, [project.status, user]);
 
-    const runPlanner = async () => {
-      try {
-        if (!project.srs) return;
-        addLog("Planner: Mapping file system based on SRS...");
-        const plan = await getPlannerResponse(project.srs);
-        setProject(prev => ({ ...prev, plan, status: "designing" }));
-        addLog(`Planner: Scaffolded ${plan.files.length} modules.`);
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Planner: ${err}`);
-      }
-    };
+  const historicalSnapshot = project.selectedHistoryId ? project.history.find(h => h.id === project.selectedHistoryId) : null;
+  const isViewingHistory = !!project.selectedHistoryId;
+  const activeDesign = isViewingHistory ? historicalSnapshot?.designSystem : project.designSystem;
 
-    const runDesigner = async () => {
-      try {
-        if (!project.plan) return;
-        addLog("Designer: Constructing atomic design system...");
-        const design = await getDesignerResponse(project.userPrompt, project.plan.features);
-        setProject(prev => ({ ...prev, designSystem: design, status: "architecting" }));
-        addLog(`Designer: Branding finalized for "${design.metadata.appName}".`);
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Designer: ${err}`);
-      }
-    };
+  const previewDoc = useMemo(() => {
+    if (!activeDesign) return "";
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+          :root {
+            --primary: ${activeDesign.colors.primary};
+            --accent: ${activeDesign.colors.accent};
+            --bg: ${activeDesign.colors.background};
+            --fg: ${activeDesign.colors.foreground};
+            --radius: ${activeDesign.layout.radius};
+            --spacing: ${activeDesign.layout.spacing};
+          }
+          body { background-color: var(--bg); color: var(--fg); font-family: sans-serif; padding: var(--spacing); }
+          .card { background: white; border-radius: var(--radius); box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); padding: 2rem; margin-bottom: 2rem; border: 1px solid #e2e8f0; }
+          .btn { background-color: var(--primary); color: white; padding: 0.75rem 1.5rem; border-radius: var(--radius); font-weight: bold; display: inline-block; }
+          .badge { display: inline-block; background: #f1f5f9; color: #475569; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        </style>
+      </head>
+      <body>
+        <div class="max-w-2xl mx-auto py-12">
+          <header class="mb-12 text-center">
+            <div class="badge mb-4">${activeDesign.metadata.styleVibe} architecture</div>
+            <h1 class="text-4xl font-black mb-2">${activeDesign.metadata.appName}</h1>
+            <p class="text-slate-500">Neural Review Pipeline Active</p>
+          </header>
+          <div class="card">
+            <h2 class="text-xl font-bold mb-4">Neural Audit Passed</h2>
+            <p class="mb-6 text-slate-600 leading-relaxed">This view provides a live preview of the design system components before final generation.</p>
+            <div class="btn">Deploy App</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }, [activeDesign]);
 
-    const runArchitect = async () => {
-      try {
-        if (!project.plan) return;
-        addLog("Architect: Generating virtual file structures...");
-        const initialFS: Record<string, string> = {};
-        project.plan.files.forEach(f => { initialFS[f] = "// Coding in progress..."; });
-        setProject(prev => ({ ...prev, fileSystem: initialFS, status: "coding" }));
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Architect: ${err}`);
-      }
-    };
-
-    const runCoder = async () => {
-      try {
-        if (!project.plan || !project.designSystem) return;
-        const filesToCode = Object.keys(project.fileSystem);
-        for (const file of filesToCode) {
-          setProject(prev => ({ ...prev, currentFile: file }));
-          addLog(`Coder: Implementing ${file}...`);
-          const code = await getCoderResponse(file, project.plan, project.designSystem, project.fileSystem);
-          setProject(prev => ({
-            ...prev,
-            fileSystem: { ...prev.fileSystem, [file]: code }
-          }));
-        }
-        setProject(prev => ({ ...prev, status: "compiling", currentFile: filesToCode[0] }));
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Coder: ${err}`);
-      }
-    };
-
-    const runCompiler = async () => {
-      try {
-        addLog("Compiler: Optimizing build artifacts...");
-        await new Promise(r => setTimeout(r, 1200));
-        const shouldFail = Math.random() < 0.25 && project.iterationCount < 1;
-        if (shouldFail) {
-          addLog("Compiler Error: Build failed due to inconsistent module resolution.");
-          setProject(prev => ({ ...prev, status: "healing" }));
-        } else {
-          addLog("Compiler Success: Runtime deployed at :3000.");
-          setProject(prev => ({ ...prev, status: "ready", activeTab: 'preview' })); // Auto-switch to preview on success
-        }
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Compiler: ${err}`);
-      }
-    };
-
-    const runPatcher = async () => {
-      try {
-        addLog("Patcher: Performing self-healing mutation...");
-        const failingFile = "src/App.tsx";
-        const code = project.fileSystem[failingFile];
-        const patch = await getPatcherResponse(failingFile, code, "Module resolution conflict in App components.");
-        setProject(prev => ({
-          ...prev,
-          fileSystem: { ...prev.fileSystem, [failingFile]: patch },
-          status: "compiling",
-          iterationCount: prev.iterationCount + 1
-        }));
-      } catch (err) {
-        setProject(prev => ({ ...prev, status: "error" }));
-        addLog(`Error in Patcher: ${err}`);
-      }
-    };
-
-    if (project.status === "managing") runManager();
-    if (project.status === "planning") runPlanner();
-    if (project.status === "designing") runDesigner();
-    if (project.status === "architecting") runArchitect();
-    if (project.status === "coding") runCoder();
-    if (project.status === "compiling") runCompiler();
-    if (project.status === "healing") runPatcher();
-
-  }, [project.status, project.userPrompt, user]);
-
-  if (!user) {
-    return <AuthScreen onLogin={setUser} />;
-  }
+  if (!user) return <AuthScreen onLogin={setUser} />;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0f172a] text-slate-100 font-sans">
-      {/* Header */}
-      <header className="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0f172a]/80 backdrop-blur-md z-10 shrink-0">
+      <header className="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0f172a]/80 backdrop-blur-md z-30 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Cpu className="text-white" size={18} />
-          </div>
-          <div>
-            <h1 className="font-bold text-sm tracking-tight">AGENTIC STUDIO <span className="text-blue-400">PRO</span></h1>
-            <p className="text-[10px] text-slate-500 font-medium">SELF-HEALING ARCHITECTURE</p>
-          </div>
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg"><ShieldCheck className="text-white" size={18} /></div>
+          <h1 className="font-bold text-sm tracking-tight uppercase">Agentic Studio <span className="text-blue-400">Pro</span></h1>
         </div>
-        
-        <div className="flex items-center gap-6">
-          <StatusBadge status={project.status} />
-          <div className="h-4 w-[1px] bg-slate-800" />
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-800/50 rounded-full border border-slate-700/50">
-              <UserIcon size={14} className="text-blue-400" />
-              <span className="text-xs font-semibold">{user.username}</span>
-            </div>
-            <button 
-              onClick={handleLogout}
-              className="p-2 hover:bg-red-400/10 hover:text-red-400 rounded-lg text-slate-400 transition-colors"
-              title="Logout"
-            >
-              <LogOut size={18} />
-            </button>
-            <button 
-              onClick={saveToDisk}
-              className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors"
-              title="Save Workspace (Ctrl+S)"
-            >
-              <Save size={18} className={isSaving ? "text-blue-400" : ""} />
-            </button>
-            <button 
-              onClick={startGeneration}
-              disabled={project.status !== 'idle' && project.status !== 'ready' && project.status !== 'error'}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Play size={14} fill="currentColor" />
-              BUILD
-            </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full border border-slate-700">
+            <div className={`w-2 h-2 rounded-full ${project.status === 'idle' ? 'bg-slate-500' : 'bg-green-500 animate-pulse'}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider">{project.status}</span>
           </div>
+          <button onClick={startGeneration} disabled={project.status !== 'idle' && project.status !== 'ready'} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 shadow-lg shadow-blue-500/10">INITIATE PROJECT</button>
         </div>
       </header>
 
       <main className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <div className="w-16 border-r border-slate-800 flex flex-col items-center py-4 gap-6 bg-[#0f172a] shrink-0">
-          <Files className="text-blue-400" size={20} />
-          <MessageSquare className="text-slate-500 hover:text-slate-300 cursor-pointer" size={20} />
-          <Layout className="text-slate-500 hover:text-slate-300 cursor-pointer" size={20} />
-          <div className="mt-auto flex flex-col gap-6">
-            <Cpu className="text-slate-500 hover:text-slate-300 cursor-pointer" size={20} />
-            <Settings className="text-slate-500 hover:text-slate-300 cursor-pointer" size={20} />
-          </div>
-        </div>
-
-        <FileExplorer 
-          files={Object.keys(project.fileSystem)} 
-          activeFile={project.currentFile}
-          onFileSelect={handleFileSelect} 
+        <HistoryTimeline 
+          snapshots={project.history} 
+          selectedId={project.selectedHistoryId} 
+          onSelect={(id) => setProject(p => ({ ...p, selectedHistoryId: id }))}
+          onRollback={handleRollback}
         />
 
-        {/* Editor & Preview Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex h-10 border-b border-slate-800 px-4 bg-[#0f172a] justify-between items-center shrink-0">
-            <div className="flex h-full">
-              <button 
-                onClick={() => setProject(p => ({ ...p, activeTab: 'code' }))}
-                className={`px-4 h-full flex items-center gap-2 text-xs font-medium transition-all ${project.activeTab === 'code' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50' : 'text-slate-400'}`}
-              >
-                <Code2 size={14} />
-                CODE
-              </button>
-              <button 
-                onClick={() => setProject(p => ({ ...p, activeTab: 'preview' }))}
-                className={`px-4 h-full flex items-center gap-2 text-xs font-medium transition-all ${project.activeTab === 'preview' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50' : 'text-slate-400'}`}
-              >
-                <Layout size={14} />
-                PREVIEW
-              </button>
-            </div>
-            
-            <div className="flex items-center gap-4 text-xs font-mono text-slate-500 truncate px-4">
-              {project.currentFile && <span className="opacity-50">{project.currentFile}</span>}
-            </div>
+        <div className="flex-1 flex flex-col min-w-0 border-r border-slate-800">
+          <div className="flex h-10 border-b border-slate-800 bg-[#0f172a] items-center px-4">
+             <div className="flex h-full mr-auto">
+               <button onClick={() => setProject(p => ({ ...p, activeTab: 'code' }))} className={`px-4 h-full text-[10px] font-bold tracking-widest transition-all ${project.activeTab === 'code' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-500 hover:text-slate-300'}`}>SOURCE</button>
+               <button onClick={() => setProject(p => ({ ...p, activeTab: 'preview' }))} className={`px-4 h-full text-[10px] font-bold tracking-widest transition-all ${project.activeTab === 'preview' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-500 hover:text-slate-300'}`}>DEPLOYMENT</button>
+             </div>
+             {isViewingHistory && (
+               <div className="flex items-center gap-2 px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
+                 <Clock size={10} className="text-blue-400" />
+                 <span className="text-[9px] font-bold text-blue-400 uppercase">Snapshot Mode</span>
+               </div>
+             )}
+          </div>
 
-            {project.activeTab === 'code' && (
-              <div className="flex items-center gap-1">
-                <button 
-                  onClick={triggerUndo} 
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" 
-                  title="Undo (Ctrl+Z)"
-                >
-                  <Undo size={14} />
-                </button>
-                <button 
-                  onClick={triggerRedo} 
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors" 
-                  title="Redo (Ctrl+Y)"
-                >
-                  <Redo size={14} />
-                </button>
+          <div className="flex-1 relative bg-[#020617]">
+            {project.activeTab === 'code' ? (
+              isViewingHistory && project.currentFile ? (
+                <DiffEditor 
+                  height="100%" 
+                  language={getFileLanguage(project.currentFile)}
+                  original={historicalSnapshot?.fileSystem[project.currentFile] || ""}
+                  modified={project.fileSystem[project.currentFile] || ""}
+                  theme="vs-dark"
+                  options={{ minimap: { enabled: false }, fontSize: 13, readOnly: true }}
+                />
+              ) : (
+                <Editor 
+                  height="100%" 
+                  language={getFileLanguage(project.currentFile)} 
+                  theme="vs-dark" 
+                  value={project.currentFile ? project.fileSystem[project.currentFile] : "// Select a file or start generation..."} 
+                  options={{ minimap: { enabled: false }, fontSize: 13, readOnly: isViewingHistory }} 
+                />
+              )
+            ) : (
+              <div className="absolute inset-0 bg-[#f8fafc]">
+                <iframe title="Neural Preview" srcDoc={previewDoc} className="w-full h-full border-none" />
               </div>
             )}
           </div>
 
-          <div className="flex-1 overflow-hidden relative">
-            {/* Editor View */}
-            <div className={`absolute inset-0 w-full h-full bg-[#1e293b] transition-opacity duration-200 ${project.activeTab === 'code' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}>
-                <Editor
-                  height="100%"
-                  language={getFileLanguage(project.currentFile)}
-                  theme="vs-dark"
-                  path={project.currentFile || undefined}
-                  value={project.currentFile ? project.fileSystem[project.currentFile] : "// Select a file to view code"}
-                  onChange={handleEditorChange}
-                  onMount={handleEditorDidMount}
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 13,
-                    fontFamily: 'Fira Code',
-                    scrollBeyondLastLine: false,
-                    readOnly: project.status !== 'ready' && project.status !== 'idle' && project.status !== 'error',
-                    automaticLayout: true,
-                  }}
-                />
-            </div>
-
-            {/* Preview View */}
-            <div className={`
-                bg-white flex flex-col transition-all duration-300 ease-in-out
-                ${isZenMode ? 'fixed inset-0 z-[100]' : 'absolute inset-0 w-full h-full'}
-                ${project.activeTab === 'preview' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}
-            `}>
-                <div className="h-8 bg-slate-100 border-b flex items-center px-4 gap-4 shrink-0">
-                   <div className="flex gap-1.5">
-                     <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
-                     <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                   </div>
-                   <div className="flex-1 bg-white border rounded h-5 text-[10px] flex items-center px-2 text-slate-400">
-                     localhost:3000
-                   </div>
-                   <div className="flex items-center gap-3">
-                     <button 
-                        onClick={() => setIsZenMode(!isZenMode)}
-                        className="text-slate-400 hover:text-slate-600 transition-colors"
-                        title={isZenMode ? "Exit Zen Mode (Esc)" : "Enter Zen Mode"}
-                     >
-                       {isZenMode ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-                     </button>
-                     <ExternalLink size={12} className="text-slate-400 hover:text-slate-600 cursor-pointer" />
-                   </div>
-                </div>
-                
-                <PreviewSystem 
-                  status={project.status} 
-                  designSystem={project.designSystem} 
-                />
-            </div>
-          </div>
-
-          <div className="h-40 shrink-0">
-            <Terminal logs={project.terminalLogs} />
+          <div className="h-28 bg-[#020617] border-t border-slate-800 p-2 font-mono text-[9px] text-slate-500 overflow-y-auto">
+            {(isViewingHistory ? historicalSnapshot?.terminalLogs : project.terminalLogs)?.map((l, i) => <div key={i} className="py-0.5"><span className="text-blue-900/50 mr-2">➜</span>{l}</div>)}
           </div>
         </div>
 
-        {/* Right Sidebar - Product Manager / Intent */}
-        <div className="w-80 border-l border-slate-800 flex flex-col bg-[#0f172a] shrink-0">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="text-blue-400" size={16} />
-              <span className="text-sm font-bold uppercase tracking-wider">INTENT</span>
-            </div>
-            {project.status !== 'idle' && (
-              <button 
-                onClick={() => {
-                  if (confirm("Reset current project workspace?")) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    setProject({
-                      userPrompt: "",
-                      fileSystem: {},
-                      terminalLogs: ["System Reset."],
-                      status: "idle",
-                      iterationCount: 0,
-                      currentFile: null,
-                      activeTab: 'code',
-                      editorViewState: {}
-                    });
-                    setInput("");
-                  }
-                }}
-                className="text-[10px] text-slate-500 hover:text-red-400 transition-colors"
-              >
-                RESET
-              </button>
-            )}
+        <div className="w-80 flex flex-col bg-[#020617] border-l border-slate-800">
+          <div className="flex h-10 border-b border-slate-800 shrink-0">
+             <button onClick={() => setSidebarTab('resources')} className={`flex-1 h-full text-[9px] font-bold flex items-center justify-center gap-1 ${sidebarTab === 'resources' ? 'text-blue-400 border-b-2 border-blue-500' : 'text-slate-500'}`}>
+                <Activity size={12} /> RESOURCES
+             </button>
+             <button onClick={() => setSidebarTab('theme')} className={`flex-1 h-full text-[9px] font-bold flex items-center justify-center gap-1 ${sidebarTab === 'theme' ? 'text-indigo-400 border-b-2 border-indigo-500' : 'text-slate-500'}`}>
+                <Palette size={12} /> THEME
+             </button>
+             <button onClick={() => setSidebarTab('audit')} className={`flex-1 h-full text-[9px] font-bold flex items-center justify-center gap-1 ${sidebarTab === 'audit' ? 'text-emerald-400 border-b-2 border-emerald-500' : 'text-slate-500'}`}>
+                <ShieldCheck size={12} /> AUDIT
+             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-             {project.status === 'idle' && (
-               <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
-                 <p className="text-xs text-slate-400 italic">"Our Product Manager agent will first build a technical blueprint for your idea."</p>
-               </div>
-             )}
-
-             {project.srs && (
-               <div className="space-y-4 animate-in fade-in duration-700">
-                 <div className="space-y-2">
-                   <div className="flex items-center gap-2">
-                     <ClipboardList size={14} className="text-blue-400" />
-                     <span className="text-[10px] font-bold text-slate-500 uppercase">Product Specification</span>
-                   </div>
-                   <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 text-[11px] leading-relaxed text-slate-300 font-sans whitespace-pre-wrap">
-                     {project.srs}
-                   </div>
-                 </div>
-
-                 {project.designSystem && (
-                   <div className="space-y-2 pt-2 border-t border-slate-800">
-                     <div className="flex items-center gap-2">
-                        <Layout size={14} className="text-purple-400" />
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">Generated Theme</span>
-                     </div>
-                     <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <p className="text-[9px] text-slate-500 mb-1">Primary</p>
-                          <div className="h-2 rounded" style={{ backgroundColor: project.designSystem.colors.primary }} />
-                        </div>
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <p className="text-[9px] text-slate-500 mb-1">Vibe</p>
-                          <p className="text-[10px] font-bold">{project.designSystem.metadata.styleVibe}</p>
-                        </div>
-                     </div>
-                   </div>
-                 )}
-               </div>
-             )}
+          
+          <div className="flex-1 overflow-hidden">
+            {sidebarTab === 'resources' && <ResourceMonitor metrics={project.resources} suggestions={project.suggestions} onRestart={() => window.location.reload()} />}
+            {sidebarTab === 'theme' && <ThemeLaboratory design={project.designSystem} updateDesign={(d) => setProject(p => ({ ...p, designSystem: d }))} onSync={() => captureSnapshot("Design Update")} />}
+            {sidebarTab === 'audit' && <NeuralAuditPanel report={isViewingHistory ? historicalSnapshot?.reviewReport || null : project.activeReview} onFix={handleFixAudit} />}
           </div>
 
-          <div className="p-4 border-t border-slate-800 shrink-0">
-            <div className="relative">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Describe your app idea..."
-                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl p-3 pr-10 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all min-h-[100px] resize-none"
-                disabled={project.status !== 'idle' && project.status !== 'ready' && project.status !== 'error'}
-              />
-              <button
-                onClick={startGeneration}
-                disabled={project.status !== 'idle' && project.status !== 'ready' && project.status !== 'error'}
-                className="absolute right-2 bottom-2 p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-slate-700 text-white rounded-lg transition-all shadow-lg"
-              >
-                <ArrowRight size={16} />
-              </button>
-            </div>
+          <div className="p-4 space-y-4 border-t border-slate-800">
+            <textarea 
+              value={input} 
+              onChange={(e) => setInput(e.target.value)} 
+              disabled={project.status !== 'idle' && project.status !== 'ready'}
+              placeholder="Describe your next neural project..." 
+              className="w-full h-20 bg-[#0f172a] border border-slate-800 rounded-xl p-3 text-[11px] text-slate-300 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500" 
+            />
+            <button 
+              onClick={startGeneration} 
+              disabled={project.status !== 'idle' && project.status !== 'ready'}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-[10px] font-bold transition-all shadow-xl shadow-blue-500/10 flex items-center justify-center gap-2"
+            >
+              <Zap size={14} /> RUN ENGINE
+            </button>
           </div>
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="h-8 border-t border-slate-800 bg-[#0f172a] flex items-center justify-between px-4 text-[10px] font-medium text-slate-500 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1">
-            <Zap size={10} className="text-yellow-500" />
-            <span>HEALING ENGINE ACTIVE</span>
-          </div>
-          <div className="h-3 w-[1px] bg-slate-800" />
-          <div className="flex items-center gap-1.5 min-w-[140px]">
-            {isSaving ? (
-              <div className="flex items-center gap-1.5 text-blue-400">
-                <Loader2 size={10} className="animate-spin" />
-                <span>SAVING CHANGES...</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 text-slate-500">
-                <CheckCircle2 size={10} className="text-green-500" />
-                <span>SAVED {project.lastSaved ? `@ ${project.lastSaved}` : ''}</span>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-4 uppercase tracking-widest">
-          <span>UTF-8</span>
-          <span>TYPESCRIPT</span>
-          <div className="flex items-center gap-1">
-            <div className={`w-1.5 h-1.5 rounded-full ${project.status === 'ready' ? 'bg-green-500' : 'bg-yellow-500'}`} />
-            <span>PORT: 3000</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
