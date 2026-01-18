@@ -31,10 +31,11 @@ export interface DesignSystem {
   };
 }
 
-export type AgentStatus = "idle" | "planning" | "designing" | "architecting" | "coding" | "compiling" | "healing" | "ready" | "error";
+export type AgentStatus = "idle" | "managing" | "planning" | "designing" | "architecting" | "coding" | "compiling" | "healing" | "ready" | "error";
 
 export interface ProjectState {
   userPrompt: string;
+  srs?: string;
   plan?: {
     features: string[];
     files: string[];
@@ -47,6 +48,8 @@ export interface ProjectState {
   iterationCount: number;
   currentFile: string | null;
   lastSaved?: string;
+  activeTab?: 'code' | 'preview';
+  editorViewState?: Record<string, any>;
 }
 
 export interface FileEntry {

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   Play, 
@@ -15,7 +14,7 @@ import {
   FolderOpen,
   Zap,
   CheckCircle2,
-  AlertCircle,
+  AlertCircle, 
   Loader2,
   Undo,
   Redo,
@@ -25,11 +24,15 @@ import {
   Lock,
   LogOut,
   ArrowRight,
-  Clock
+  Clock,
+  ClipboardList,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import Editor, { OnMount } from "@monaco-editor/react";
 import { ProjectState, AgentStatus, DesignSystem, User } from './types';
 import { 
+  getManagerResponse,
   getPlannerResponse, 
   getDesignerResponse, 
   getCoderResponse, 
@@ -42,25 +45,93 @@ const AUTH_KEY = 'agentic_studio_auth';
 const SESSION_KEY = 'agentic_studio_session';
 
 const getFileLanguage = (filename: string | null) => {
-  if (!filename) return "typescript";
+  if (!filename) return "plaintext";
+  const lower = filename.toLowerCase();
+  
+  // Specific full filenames
+  if (lower === 'dockerfile') return 'dockerfile';
+  if (lower === 'makefile') return 'makefile';
+  if (lower === 'cmakelists.txt') return 'cmake';
+  if (lower === 'jenkinsfile') return 'groovy';
+  if (lower === 'vite.config.js' || lower === 'vite.config.ts') return 'javascript';
+  if (lower === 'next.config.js') return 'javascript';
+  
+  // Dotfiles
+  if (lower.startsWith('.env')) return 'ini';
+  if (lower.startsWith('.babelrc')) return 'json';
+  if (lower.startsWith('.eslintrc')) return 'json';
+  if (lower.startsWith('.prettierrc')) return 'json';
+  if (lower === '.gitignore' || lower === '.npmignore') return 'plaintext';
+
   const ext = filename.split('.').pop()?.toLowerCase();
+  
+  // Extension mapping
   const map: Record<string, string> = {
+    // TypeScript / JavaScript
     ts: "typescript",
     tsx: "typescript",
     js: "javascript",
     jsx: "javascript",
-    css: "css",
+    mjs: "javascript",
+    cjs: "javascript",
+    
+    // Web
     html: "html",
+    htm: "html",
+    css: "css",
+    scss: "scss",
+    less: "less",
+    sass: "scss",
     json: "json",
+    xml: "xml",
+    svg: "xml",
+    yaml: "yaml",
+    yml: "yaml",
     md: "markdown",
+    markdown: "markdown",
+    
+    // Backend / Systems
     py: "python",
     go: "go",
     rs: "rust",
+    java: "java",
+    c: "c",
+    cpp: "cpp",
+    h: "cpp",
+    hpp: "cpp",
+    cs: "csharp",
+    php: "php",
+    
+    // Scripts / Config
+    sh: "shell",
+    bash: "shell",
+    zsh: "shell",
+    bat: "bat",
+    ps1: "powershell",
+    ini: "ini",
+    toml: "ini",
     sql: "sql",
-    yaml: "yaml",
-    yml: "yaml"
+    
+    // Other
+    rb: "ruby",
+    lua: "lua",
+    r: "r",
+    dart: "dart",
+    swift: "swift",
+    kt: "kotlin",
+    pl: "perl",
+    
+    // Framework specific (fallback to html or similar)
+    vue: "html",
+    svelte: "html",
+    astro: "html",
+    
+    // Text
+    txt: "plaintext",
+    log: "plaintext"
   };
-  return map[ext || ""] || "typescript";
+
+  return map[ext || ""] || "plaintext";
 };
 
 // --- Auth Component ---
@@ -177,7 +248,8 @@ const AuthScreen: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) =>
 const StatusBadge: React.FC<{ status: AgentStatus }> = ({ status }) => {
   const config = {
     idle: { color: 'bg-slate-500', icon: <Cpu size={14}/>, text: 'Idle' },
-    planning: { color: 'bg-blue-500', icon: <Zap size={14} className="animate-pulse"/>, text: 'Planner' },
+    managing: { color: 'bg-indigo-600', icon: <ClipboardList size={14} className="animate-pulse"/>, text: 'Manager' },
+    planning: { color: 'bg-blue-500', icon: <Zap size={14}/>, text: 'Planner' },
     designing: { color: 'bg-purple-500', icon: <Layout size={14}/>, text: 'Designer' },
     architecting: { color: 'bg-indigo-500', icon: <Files size={14}/>, text: 'Architect' },
     coding: { color: 'bg-emerald-500', icon: <Code2 size={14} className="animate-pulse"/>, text: 'Coder' },
@@ -253,7 +325,7 @@ const Terminal: React.FC<{ logs: string[] }> = ({ logs }) => {
   );
 };
 
-const IframePreview = React.memo(({ designSystem }: { designSystem?: DesignSystem }) => {
+const IframePreview = React.memo(({ designSystem, status }: { designSystem?: DesignSystem, status: AgentStatus }) => {
   return (
     <iframe 
       title="preview"
@@ -288,6 +360,14 @@ const IframePreview = React.memo(({ designSystem }: { designSystem?: DesignSyste
     />
   );
 }, (prev, next) => {
+  // Optimization: 
+  // 1. If we are not ready in the next state, we don't need to update the iframe (it will be hidden).
+  if (next.status !== 'ready') return true;
+
+  // 2. If we are transitioning to 'ready', we must re-render to ensure content is up-to-date.
+  if (prev.status !== 'ready' && next.status === 'ready') return false;
+
+  // 3. If we are already ready, only re-render if the design system has actually changed.
   return JSON.stringify(prev.designSystem) === JSON.stringify(next.designSystem);
 });
 
@@ -296,21 +376,21 @@ const PreviewSystem = ({ status, designSystem }: { status: AgentStatus; designSy
 
   return (
     <div className="flex-1 flex flex-col relative overflow-hidden h-full">
-      {isReady ? (
-        <IframePreview designSystem={designSystem} />
-      ) : (
-        <div className="flex-1 w-full bg-slate-100 animate-pulse" />
-      )}
+      {/* 
+        Keep iframe mounted but hidden when not ready to preserve state and avoid unnecessary reloads.
+        We use CSS visibility/opacity+pointer-events to hide it rather than unmounting.
+      */}
+      <div className={`absolute inset-0 transition-opacity duration-500 ${isReady ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>
+        <IframePreview designSystem={designSystem} status={status} />
+      </div>
 
-      {!isReady && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-50/90 backdrop-blur-sm text-slate-400 text-sm gap-4 transition-all duration-300">
-          <Loader2 size={32} className="animate-spin text-blue-500" />
-          <div className="text-center">
-            <p className="font-bold text-slate-600">Awaiting system compilation...</p>
-            <p className="text-[10px] uppercase tracking-widest mt-1 opacity-60">Phase: {status}</p>
-          </div>
+      <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-50/90 backdrop-blur-sm text-slate-400 text-sm gap-4 transition-all duration-300 ${isReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+        <Loader2 size={32} className="animate-spin text-blue-500" />
+        <div className="text-center">
+          <p className="font-bold text-slate-600">Awaiting system compilation...</p>
+          <p className="text-[10px] uppercase tracking-widest mt-1 opacity-60">Phase: {status}</p>
         </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -328,11 +408,15 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Explicitly restoring state while ensuring status transitions are safe
         return { 
           ...parsed, 
-          status: parsed.status === 'ready' ? 'ready' : 'idle',
-          terminalLogs: [...(parsed.terminalLogs || []), `> System workspace restored. Last seen at ${parsed.lastSaved || 'unknown'}.`]
+          // If status was in an active agent state, reset to idle to prevent stuck states.
+          // If ready or error, preserve it.
+          status: ['ready', 'error', 'idle'].includes(parsed.status) ? parsed.status : 'idle',
+          terminalLogs: [...(parsed.terminalLogs || []), `> Workspace restored. Last saved: ${parsed.lastSaved || 'N/A'}`],
+          // Restore active tab or default based on status
+          activeTab: parsed.activeTab || (parsed.status === 'ready' ? 'preview' : 'code'),
+          editorViewState: parsed.editorViewState || {}
         };
       } catch (e) {
         console.error("Failed to parse saved project state", e);
@@ -344,53 +428,153 @@ export default function App() {
       terminalLogs: ["Welcome to Agentic Studio Pro. Define your intent to begin."],
       status: "idle",
       iterationCount: 0,
-      currentFile: null
+      currentFile: null,
+      activeTab: 'code',
+      editorViewState: {}
     };
   });
 
   const [input, setInput] = useState(project.userPrompt);
-  const [activeTab, setActiveTab] = useState<'code' | 'preview'>(project.status === 'ready' ? 'preview' : 'code');
   const [isSaving, setIsSaving] = useState(false);
+  const [isZenMode, setIsZenMode] = useState(false);
   const editorRef = useRef<any>(null);
+  
+  // Ref to hold current project state for event listeners and stable access
+  const projectRef = useRef(project);
 
-  const addLog = (msg: string) => {
-    setProject(prev => ({ ...prev, terminalLogs: [...prev.terminalLogs, msg] }));
-  };
-
-  /**
-   * Core persistence logic: saves current workspace state to disk.
-   */
-  const saveToDisk = useCallback(() => {
-    setIsSaving(true);
-    const now = new Date().toLocaleTimeString();
-    const updatedProject = { ...project, lastSaved: now };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProject));
-    setProject(prev => ({ ...prev, lastSaved: now }));
-    setTimeout(() => setIsSaving(false), 800);
+  useEffect(() => {
+    projectRef.current = project;
   }, [project]);
 
-  // Auto-save debounced effect
+  // Enhanced Auto-save Logic
+  const saveToDisk = useCallback(() => {
+    if (!user || !projectRef.current) return;
+    setIsSaving(true);
+    
+    // Capture current view state if editor is active and valid
+    let currentViewState = { ...projectRef.current.editorViewState };
+    if (editorRef.current && projectRef.current.currentFile && projectRef.current.activeTab === 'code') {
+      const viewState = editorRef.current.saveViewState();
+      if (viewState) {
+         currentViewState = {
+           ...currentViewState,
+           [projectRef.current.currentFile]: viewState
+         };
+      }
+    }
+
+    const now = new Date().toLocaleTimeString();
+    // Use projectRef.current to avoid closure staleness and ensure we have latest data
+    const updatedProject = { 
+      ...projectRef.current, 
+      lastSaved: now,
+      editorViewState: currentViewState
+    };
+    
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProject));
+    } catch (e) {
+      console.error("Auto-save failed:", e);
+    }
+    
+    // Update state to sync lastSaved and viewState without triggering loops (since effect depends on project props)
+    setProject(prev => ({ 
+      ...prev, 
+      lastSaved: now,
+      editorViewState: currentViewState
+    }));
+    
+    // Simulate network delay for UI feedback
+    setTimeout(() => setIsSaving(false), 800);
+  }, [user]);
+
+  // Save on unmount / visibility change (tab switch)
+  useEffect(() => {
+    const handleSaveOnExit = () => {
+      // Use saveToDisk logic manually here to ensure synchronous execution if needed, 
+      // but keeping it simple with direct storage access is safer for unload events.
+      if (user && projectRef.current) {
+        const now = new Date().toLocaleTimeString();
+        const stateToSave = { ...projectRef.current, lastSaved: now };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+        } catch(e) { console.error("Exit save failed", e); }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleSaveOnExit);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        handleSaveOnExit();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('beforeunload', handleSaveOnExit);
+      document.removeEventListener('visibilitychange', handleSaveOnExit);
+    };
+  }, [user]);
+
+  // Periodic auto-save (Debounced)
   useEffect(() => {
     if (!user) return;
-    const timeoutId = setTimeout(saveToDisk, 1500);
+    // Debounce save when filesystem, current file, user prompt, or activeTab changes
+    const timeoutId = setTimeout(saveToDisk, 2000); // 2 seconds debounce
     return () => clearTimeout(timeoutId);
-  }, [project.fileSystem, project.currentFile, project.userPrompt, project.status, user, saveToDisk]);
+  }, [project.fileSystem, project.currentFile, project.userPrompt, project.status, project.activeTab, user, saveToDisk]);
 
-  // Keyboard shortcut listener for manual save (Cmd/Ctrl + S)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         saveToDisk();
-        addLog("> Manual save complete.");
+      }
+      if (e.key === 'Escape' && isZenMode) {
+        setIsZenMode(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [saveToDisk]);
+  }, [saveToDisk, isZenMode]);
+
+  // Restore Editor View State when active file changes
+  useEffect(() => {
+    if (project.activeTab === 'code' && project.currentFile && editorRef.current && project.editorViewState?.[project.currentFile]) {
+      // Small timeout to allow model switch to propagate
+      setTimeout(() => {
+        if(editorRef.current) {
+          editorRef.current.restoreViewState(project.editorViewState![project.currentFile!]);
+          editorRef.current.focus();
+        }
+      }, 50);
+    }
+  }, [project.currentFile, project.activeTab]);
+
+  const addLog = (msg: string) => {
+    setProject(prev => ({ ...prev, terminalLogs: [...prev.terminalLogs, msg] }));
+  };
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+  };
+
+  const handleFileSelect = (filename: string) => {
+    if (filename === project.currentFile) return;
+
+    // Save current file's view state before switching
+    let newViewState = { ...project.editorViewState };
+    if (editorRef.current && project.currentFile) {
+      const currentViewState = editorRef.current.saveViewState();
+      if (currentViewState) {
+        newViewState[project.currentFile] = currentViewState;
+      }
+    }
+
+    setProject(prev => ({ 
+      ...prev, 
+      currentFile: filename,
+      editorViewState: newViewState
+    }));
   };
 
   const triggerUndo = () => {
@@ -417,10 +601,15 @@ export default function App() {
     setProject(prev => ({
       ...prev,
       userPrompt: input,
-      status: "planning",
-      terminalLogs: [...prev.terminalLogs, `> Initializing Project: "${input}"`],
+      status: "managing",
+      terminalLogs: [...prev.terminalLogs, `> Starting workflow for: "${input}"`],
       fileSystem: {},
-      iterationCount: 0
+      srs: undefined,
+      plan: undefined,
+      designSystem: undefined,
+      iterationCount: 0,
+      activeTab: 'code',
+      editorViewState: {}
     }));
   };
 
@@ -436,12 +625,25 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    const runManager = async () => {
+      try {
+        addLog("Manager: Generating Software Requirement Specification (SRS)...");
+        const srs = await getManagerResponse(project.userPrompt);
+        setProject(prev => ({ ...prev, srs, status: "planning" }));
+        addLog("Manager: Technical blueprint completed.");
+      } catch (err) {
+        setProject(prev => ({ ...prev, status: "error" }));
+        addLog(`Error in Manager: ${err}`);
+      }
+    };
+
     const runPlanner = async () => {
       try {
-        addLog("Planner: Analyzing intent and creating engineering blueprint...");
-        const plan = await getPlannerResponse(project.userPrompt);
+        if (!project.srs) return;
+        addLog("Planner: Mapping file system based on SRS...");
+        const plan = await getPlannerResponse(project.srs);
         setProject(prev => ({ ...prev, plan, status: "designing" }));
-        addLog(`Planner: Successfully drafted plan with ${plan.files.length} files.`);
+        addLog(`Planner: Scaffolded ${plan.files.length} modules.`);
       } catch (err) {
         setProject(prev => ({ ...prev, status: "error" }));
         addLog(`Error in Planner: ${err}`);
@@ -451,10 +653,10 @@ export default function App() {
     const runDesigner = async () => {
       try {
         if (!project.plan) return;
-        addLog("Designer: Establishing design tokens and accessibility compliance...");
+        addLog("Designer: Constructing atomic design system...");
         const design = await getDesignerResponse(project.userPrompt, project.plan.features);
         setProject(prev => ({ ...prev, designSystem: design, status: "architecting" }));
-        addLog(`Designer: Generated theme.json for "${design.metadata.appName}" (${design.metadata.styleVibe} vibe).`);
+        addLog(`Designer: Branding finalized for "${design.metadata.appName}".`);
       } catch (err) {
         setProject(prev => ({ ...prev, status: "error" }));
         addLog(`Error in Designer: ${err}`);
@@ -464,11 +666,10 @@ export default function App() {
     const runArchitect = async () => {
       try {
         if (!project.plan) return;
-        addLog("Architect: Scaffolding virtual file system and installing dependencies...");
+        addLog("Architect: Generating virtual file structures...");
         const initialFS: Record<string, string> = {};
-        project.plan.files.forEach(f => { initialFS[f] = "// Generating content..."; });
+        project.plan.files.forEach(f => { initialFS[f] = "// Coding in progress..."; });
         setProject(prev => ({ ...prev, fileSystem: initialFS, status: "coding" }));
-        addLog(`Architect: Files scaffolded. Ready for senior coder.`);
       } catch (err) {
         setProject(prev => ({ ...prev, status: "error" }));
         addLog(`Error in Architect: ${err}`);
@@ -489,7 +690,6 @@ export default function App() {
           }));
         }
         setProject(prev => ({ ...prev, status: "compiling", currentFile: filesToCode[0] }));
-        addLog("Coder: All modules implemented. Triggering build...");
       } catch (err) {
         setProject(prev => ({ ...prev, status: "error" }));
         addLog(`Error in Coder: ${err}`);
@@ -498,16 +698,15 @@ export default function App() {
 
     const runCompiler = async () => {
       try {
-        addLog("Compiler: Running 'npm run build' in WebContainer sandbox...");
-        await new Promise(r => setTimeout(r, 1500));
-        const shouldFail = Math.random() < 0.3 && project.iterationCount < 1;
+        addLog("Compiler: Optimizing build artifacts...");
+        await new Promise(r => setTimeout(r, 1200));
+        const shouldFail = Math.random() < 0.25 && project.iterationCount < 1;
         if (shouldFail) {
-          addLog("Compiler Error: Module not found. ReferenceError: './components/OldButton' is not defined.");
+          addLog("Compiler Error: Build failed due to inconsistent module resolution.");
           setProject(prev => ({ ...prev, status: "healing" }));
         } else {
-          addLog("Compiler Success: Build complete. Assets optimized.");
-          setProject(prev => ({ ...prev, status: "ready" }));
-          setActiveTab('preview');
+          addLog("Compiler Success: Runtime deployed at :3000.");
+          setProject(prev => ({ ...prev, status: "ready", activeTab: 'preview' })); // Auto-switch to preview on success
         }
       } catch (err) {
         setProject(prev => ({ ...prev, status: "error" }));
@@ -517,23 +716,23 @@ export default function App() {
 
     const runPatcher = async () => {
       try {
-        addLog("Patcher: Analyzing stderr logs. Performing surgical fix...");
+        addLog("Patcher: Performing self-healing mutation...");
         const failingFile = "src/App.tsx";
         const code = project.fileSystem[failingFile];
-        const patch = await getPatcherResponse(failingFile, code, "ReferenceError: './components/OldButton' is not defined.");
+        const patch = await getPatcherResponse(failingFile, code, "Module resolution conflict in App components.");
         setProject(prev => ({
           ...prev,
           fileSystem: { ...prev.fileSystem, [failingFile]: patch },
           status: "compiling",
           iterationCount: prev.iterationCount + 1
         }));
-        addLog(`Patcher: Applied mutations to ${failingFile}. Retrying build.`);
       } catch (err) {
         setProject(prev => ({ ...prev, status: "error" }));
         addLog(`Error in Patcher: ${err}`);
       }
     };
 
+    if (project.status === "managing") runManager();
     if (project.status === "planning") runPlanner();
     if (project.status === "designing") runDesigner();
     if (project.status === "architecting") runArchitect();
@@ -550,14 +749,14 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0f172a] text-slate-100 font-sans">
       {/* Header */}
-      <header className="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0f172a]/80 backdrop-blur-md z-10">
+      <header className="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0f172a]/80 backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Cpu className="text-white" size={18} />
           </div>
           <div>
             <h1 className="font-bold text-sm tracking-tight">AGENTIC STUDIO <span className="text-blue-400">PRO</span></h1>
-            <p className="text-[10px] text-slate-500 font-medium">BROWSER-NATIVE SELF-HEALING IDE</p>
+            <p className="text-[10px] text-slate-500 font-medium">SELF-HEALING ARCHITECTURE</p>
           </div>
         </div>
         
@@ -589,7 +788,7 @@ export default function App() {
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play size={14} fill="currentColor" />
-              RUN
+              BUILD
             </button>
           </div>
         </div>
@@ -610,23 +809,23 @@ export default function App() {
         <FileExplorer 
           files={Object.keys(project.fileSystem)} 
           activeFile={project.currentFile}
-          onFileSelect={(f) => setProject(p => ({ ...p, currentFile: f }))} 
+          onFileSelect={handleFileSelect} 
         />
 
         {/* Editor & Preview Area */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex h-10 border-b border-slate-800 px-4 bg-[#0f172a] justify-between items-center">
+          <div className="flex h-10 border-b border-slate-800 px-4 bg-[#0f172a] justify-between items-center shrink-0">
             <div className="flex h-full">
               <button 
-                onClick={() => setActiveTab('code')}
-                className={`px-4 h-full flex items-center gap-2 text-xs font-medium transition-all ${activeTab === 'code' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50' : 'text-slate-400'}`}
+                onClick={() => setProject(p => ({ ...p, activeTab: 'code' }))}
+                className={`px-4 h-full flex items-center gap-2 text-xs font-medium transition-all ${project.activeTab === 'code' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50' : 'text-slate-400'}`}
               >
                 <Code2 size={14} />
-                EDITOR
+                CODE
               </button>
               <button 
-                onClick={() => setActiveTab('preview')}
-                className={`px-4 h-full flex items-center gap-2 text-xs font-medium transition-all ${activeTab === 'preview' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50' : 'text-slate-400'}`}
+                onClick={() => setProject(p => ({ ...p, activeTab: 'preview' }))}
+                className={`px-4 h-full flex items-center gap-2 text-xs font-medium transition-all ${project.activeTab === 'preview' ? 'text-blue-400 border-b-2 border-blue-400 bg-slate-800/50' : 'text-slate-400'}`}
               >
                 <Layout size={14} />
                 PREVIEW
@@ -637,7 +836,7 @@ export default function App() {
               {project.currentFile && <span className="opacity-50">{project.currentFile}</span>}
             </div>
 
-            {activeTab === 'code' && (
+            {project.activeTab === 'code' && (
               <div className="flex items-center gap-1">
                 <button 
                   onClick={triggerUndo} 
@@ -658,14 +857,14 @@ export default function App() {
           </div>
 
           <div className="flex-1 overflow-hidden relative">
-            {activeTab === 'code' ? (
-              <div className="h-full w-full">
+            {/* Editor View */}
+            <div className={`absolute inset-0 w-full h-full bg-[#1e293b] transition-opacity duration-200 ${project.activeTab === 'code' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}>
                 <Editor
                   height="100%"
                   language={getFileLanguage(project.currentFile)}
                   theme="vs-dark"
                   path={project.currentFile || undefined}
-                  value={project.currentFile ? project.fileSystem[project.currentFile] : "// No file selected"}
+                  value={project.currentFile ? project.fileSystem[project.currentFile] : "// Select a file to view code"}
                   onChange={handleEditorChange}
                   onMount={handleEditorDidMount}
                   options={{
@@ -677,9 +876,14 @@ export default function App() {
                     automaticLayout: true,
                   }}
                 />
-              </div>
-            ) : (
-              <div className="h-full w-full bg-white flex flex-col relative">
+            </div>
+
+            {/* Preview View */}
+            <div className={`
+                bg-white flex flex-col transition-all duration-300 ease-in-out
+                ${isZenMode ? 'fixed inset-0 z-[100]' : 'absolute inset-0 w-full h-full'}
+                ${project.activeTab === 'preview' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}
+            `}>
                 <div className="h-8 bg-slate-100 border-b flex items-center px-4 gap-4 shrink-0">
                    <div className="flex gap-1.5">
                      <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
@@ -689,15 +893,23 @@ export default function App() {
                    <div className="flex-1 bg-white border rounded h-5 text-[10px] flex items-center px-2 text-slate-400">
                      localhost:3000
                    </div>
-                   <ExternalLink size={12} className="text-slate-400" />
+                   <div className="flex items-center gap-3">
+                     <button 
+                        onClick={() => setIsZenMode(!isZenMode)}
+                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                        title={isZenMode ? "Exit Zen Mode (Esc)" : "Enter Zen Mode"}
+                     >
+                       {isZenMode ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                     </button>
+                     <ExternalLink size={12} className="text-slate-400 hover:text-slate-600 cursor-pointer" />
+                   </div>
                 </div>
                 
                 <PreviewSystem 
                   status={project.status} 
                   designSystem={project.designSystem} 
                 />
-              </div>
-            )}
+            </div>
           </div>
 
           <div className="h-40 shrink-0">
@@ -705,7 +917,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Sidebar - Chat / Intent */}
+        {/* Right Sidebar - Product Manager / Intent */}
         <div className="w-80 border-l border-slate-800 flex flex-col bg-[#0f172a] shrink-0">
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -715,7 +927,7 @@ export default function App() {
             {project.status !== 'idle' && (
               <button 
                 onClick={() => {
-                  if (confirm("Reset current project workspace? All unsaved work in memory will be lost.")) {
+                  if (confirm("Reset current project workspace?")) {
                     localStorage.removeItem(STORAGE_KEY);
                     setProject({
                       userPrompt: "",
@@ -723,7 +935,9 @@ export default function App() {
                       terminalLogs: ["System Reset."],
                       status: "idle",
                       iterationCount: 0,
-                      currentFile: null
+                      currentFile: null,
+                      activeTab: 'code',
+                      editorViewState: {}
                     });
                     setInput("");
                   }
@@ -735,26 +949,30 @@ export default function App() {
             )}
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-             <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
-               <p className="text-xs text-slate-400 italic">"Define what you want to build. Our agents will plan, design, and heal the codebase automatically."</p>
-             </div>
-             
-             {project.plan && (
-               <div className="space-y-4">
+             {project.status === 'idle' && (
+               <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+                 <p className="text-xs text-slate-400 italic">"Our Product Manager agent will first build a technical blueprint for your idea."</p>
+               </div>
+             )}
+
+             {project.srs && (
+               <div className="space-y-4 animate-in fade-in duration-700">
                  <div className="space-y-2">
-                   <span className="text-[10px] font-bold text-slate-500 uppercase">Features</span>
-                   <ul className="space-y-1">
-                     {project.plan.features.map((f, i) => (
-                       <li key={i} className="text-xs flex items-start gap-2 text-slate-300">
-                         <div className="mt-1 w-1 h-1 rounded-full bg-blue-500 shrink-0" />
-                         {f}
-                       </li>
-                     ))}
-                   </ul>
+                   <div className="flex items-center gap-2">
+                     <ClipboardList size={14} className="text-blue-400" />
+                     <span className="text-[10px] font-bold text-slate-500 uppercase">Product Specification</span>
+                   </div>
+                   <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 text-[11px] leading-relaxed text-slate-300 font-sans whitespace-pre-wrap">
+                     {project.srs}
+                   </div>
                  </div>
+
                  {project.designSystem && (
                    <div className="space-y-2 pt-2 border-t border-slate-800">
-                     <span className="text-[10px] font-bold text-slate-500 uppercase">Design System</span>
+                     <div className="flex items-center gap-2">
+                        <Layout size={14} className="text-purple-400" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">Generated Theme</span>
+                     </div>
                      <div className="grid grid-cols-2 gap-2">
                         <div className="bg-slate-900 p-2 rounded border border-slate-800">
                           <p className="text-[9px] text-slate-500 mb-1">Primary</p>
@@ -771,21 +989,21 @@ export default function App() {
              )}
           </div>
 
-          <div className="p-4 border-t border-slate-800">
+          <div className="p-4 border-t border-slate-800 shrink-0">
             <div className="relative">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Describe your app architecture..."
-                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl p-3 pr-10 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all min-h-[80px] resize-none"
+                placeholder="Describe your app idea..."
+                className="w-full bg-[#1e293b] border border-slate-700 rounded-xl p-3 pr-10 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all min-h-[100px] resize-none"
                 disabled={project.status !== 'idle' && project.status !== 'ready' && project.status !== 'error'}
               />
               <button
                 onClick={startGeneration}
                 disabled={project.status !== 'idle' && project.status !== 'ready' && project.status !== 'error'}
-                className="absolute right-2 bottom-2 p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-slate-700 text-white rounded-lg transition-all"
+                className="absolute right-2 bottom-2 p-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:bg-slate-700 text-white rounded-lg transition-all shadow-lg"
               >
-                <Zap size={16} />
+                <ArrowRight size={16} />
               </button>
             </div>
           </div>
@@ -819,7 +1037,7 @@ export default function App() {
           <span>TYPESCRIPT</span>
           <div className="flex items-center gap-1">
             <div className={`w-1.5 h-1.5 rounded-full ${project.status === 'ready' ? 'bg-green-500' : 'bg-yellow-500'}`} />
-            <span>RUNTIME PORT: 3000</span>
+            <span>PORT: 3000</span>
           </div>
         </div>
       </footer>
