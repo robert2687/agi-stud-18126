@@ -1,5 +1,5 @@
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 import { RefreshCw, Terminal, ShieldAlert, Copy, Check, AlertOctagon } from 'lucide-react';
 
 interface Props {
@@ -15,8 +15,8 @@ interface State {
 
 const STORAGE_KEY = 'agentic_studio_pro_v1';
 
-// Fix: Import and extend Component directly from react to ensure state, setState, and props are correctly typed and inherited.
-export class ErrorBoundary extends Component<Props, State> {
+// Fix: Explicitly use React.Component to ensure properties like state, setState, and props are correctly inherited and recognized by TypeScript.
+export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
     // Initialize state within constructor correctly.
@@ -32,10 +32,9 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error, errorInfo: null, copied: false };
   }
 
-  // Fix: Explicitly use this.setState inherited from Component.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Agentic Studio Critical Error Boundary Caught:", error, errorInfo);
-    // Use this.setState which is inherited from Component.
+    // Use this.setState which is inherited from React.Component.
     this.setState({ errorInfo });
   }
 
@@ -49,7 +48,6 @@ export class ErrorBoundary extends Component<Props, State> {
     window.removeEventListener('error', this.handleGlobalError);
   }
 
-  // Fix: Use this.setState inherited from Component.
   handleUnhandledRejection = (event: PromiseRejectionEvent) => {
     // Capture unhandled promise rejections (async operations).
     const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
@@ -60,7 +58,6 @@ export class ErrorBoundary extends Component<Props, State> {
     });
   };
 
-  // Fix: Use this.setState inherited from Component.
   handleGlobalError = (event: ErrorEvent) => {
     // Capture global errors that bubble up to the window.
     this.setState({
@@ -81,7 +78,6 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.reload();
   };
 
-  // Fix: Use this.state and this.setState inherited from Component.
   handleCopyError = async () => {
     // Using this.state to access component state safely.
     const text = `Error: ${this.state.error?.toString()}\n\nStack Trace:\n${this.state.error?.stack || 'N/A'}\n\nComponent Stack:\n${this.state.errorInfo?.componentStack || 'N/A'}`;
@@ -95,7 +91,7 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   render() {
-    // Fix: Access state via this.state inherited from Component.
+    // Check for errors using this.state.
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6 text-slate-200 font-sans">
@@ -202,7 +198,7 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    // Fix: Access props via this.props inherited from Component.
+    // Standard class property to access children via this.props.
     return this.props.children;
   }
 }
