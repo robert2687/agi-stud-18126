@@ -1,5 +1,5 @@
 
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Terminal, ShieldAlert, Copy, Check, AlertOctagon } from 'lucide-react';
 
 interface Props {
@@ -15,8 +15,8 @@ interface State {
 
 const STORAGE_KEY = 'agentic_studio_pro_v1';
 
-// Fix: Explicitly use React.Component to ensure properties like state, setState, and props are correctly inherited and recognized by TypeScript.
-export class ErrorBoundary extends React.Component<Props, State> {
+// Fix: Import and extend Component directly from react to ensure state, setState, and props are correctly typed and inherited.
+export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
     // Properly initialize component state within the class constructor.
@@ -32,6 +32,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     return { hasError: true, error, errorInfo: null, copied: false };
   }
 
+  // Fix: Use this.setState inherited from Component.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Agentic Studio Critical Error Boundary Caught:", error, errorInfo);
     // Correctly call this.setState to update the state with catch details.
@@ -48,6 +49,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('error', this.handleGlobalError);
   }
 
+  // Fix: Use this.setState inherited from Component.
   handleUnhandledRejection = (event: PromiseRejectionEvent) => {
     // Capture unhandled promise rejections for diagnostics.
     const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
@@ -58,6 +60,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     });
   };
 
+  // Fix: Use this.setState inherited from Component.
   handleGlobalError = (event: ErrorEvent) => {
     // Capture global uncaught errors.
     this.setState({
@@ -77,9 +80,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
     window.location.reload();
   };
 
+  // Fix: Access state and use setState from inherited Component properties.
   handleCopyError = async () => {
     // Access this.state safely within the class method.
-    const text = `Error: ${this.state.error?.toString()}\n\nComponent Stack:\n${this.state.errorInfo?.componentStack}`;
+    const text = `Error: ${this.state.error?.toString()}\n\nComponent Stack:\n${this.state.errorInfo?.componentStack || 'N/A'}`;
     try {
       await navigator.clipboard.writeText(text);
       this.setState({ copied: true });
@@ -90,7 +94,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   render() {
-    // Conditionally render error UI using this.state.hasError.
+    // Fix: Access this.state from inherited Component property.
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6 text-slate-200 font-sans">
@@ -189,7 +193,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Use this.props.children correctly from inherited React.Component.
+    // Fix: Access this.props inherited from Component.
     return this.props.children;
   }
 }

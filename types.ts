@@ -31,7 +31,19 @@ export interface DesignSystem {
   };
 }
 
-export type AgentStatus = "idle" | "managing" | "planning" | "designing" | "architecting" | "coding" | "reviewing" | "compiling" | "healing" | "ready" | "error";
+export type AgentStatus = "idle" | "managing" | "planning" | "designing" | "architecting" | "coding" | "reviewing" | "plugging" | "compiling" | "healing" | "ready" | "error";
+
+export type LifecycleHook = 'post-planning' | 'post-coding' | 'post-audit' | 'on-demand';
+
+export interface NeuralPlugin {
+  id: string;
+  name: string;
+  description: string;
+  icon: string; // Lucide icon name string
+  hook: LifecycleHook;
+  enabled: boolean;
+  author: string;
+}
 
 export interface ResourceMetrics {
   cpu: number;
@@ -51,7 +63,7 @@ export interface ReviewComment {
   file: string;
   line?: number;
   severity: 'critical' | 'warning' | 'insight';
-  category: 'quality' | 'a11y' | 'performance' | 'design' | 'maintainability';
+  category: 'quality' | 'a11y' | 'performance' | 'design' | 'maintainability' | 'security' | 'seo';
   message: string;
   recommendation: string;
 }
@@ -65,6 +77,8 @@ export interface ReviewReport {
     a11y: number;
     performance: number;
     design: number;
+    security?: number;
+    seo?: number;
   };
   comments: ReviewComment[];
 }
@@ -101,6 +115,7 @@ export interface ProjectState {
   history: HistorySnapshot[];
   selectedHistoryId: string | null;
   activeReview: ReviewReport | null;
+  installedPlugins: NeuralPlugin[];
 }
 
 export interface FileEntry {
