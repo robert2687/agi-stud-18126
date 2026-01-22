@@ -31,10 +31,58 @@ export interface DesignSystem {
   };
 }
 
-export type AgentStatus = "idle" | "planning" | "designing" | "architecting" | "coding" | "compiling" | "healing" | "ready" | "error";
+export type AgentStatus = "idle" | "managing" | "planning" | "designing" | "architecting" | "coding" | "reviewing" | "compiling" | "healing" | "ready" | "error";
+
+export interface ResourceMetrics {
+  cpu: number;
+  memory: number;
+  vfsSize: number;
+  processes: string[];
+}
+
+export interface OptimizationSuggestion {
+  id: string;
+  type: 'performance' | 'structure' | 'resource';
+  message: string;
+  impact: 'low' | 'medium' | 'high';
+}
+
+export interface ReviewComment {
+  file: string;
+  line?: number;
+  severity: 'critical' | 'warning' | 'insight';
+  category: 'quality' | 'a11y' | 'performance' | 'design' | 'maintainability';
+  message: string;
+  recommendation: string;
+}
+
+export interface ReviewReport {
+  id: string;
+  timestamp: number;
+  overallScore: number;
+  scores: {
+    quality: number;
+    a11y: number;
+    performance: number;
+    design: number;
+  };
+  comments: ReviewComment[];
+}
+
+export interface HistorySnapshot {
+  id: string;
+  timestamp: number;
+  label: string;
+  status: AgentStatus;
+  fileSystem: Record<string, string>;
+  designSystem?: DesignSystem;
+  terminalLogs: string[];
+  reviewReport?: ReviewReport;
+}
 
 export interface ProjectState {
   userPrompt: string;
+  srs?: string;
   plan?: {
     features: string[];
     files: string[];
@@ -47,6 +95,12 @@ export interface ProjectState {
   iterationCount: number;
   currentFile: string | null;
   lastSaved?: string;
+  activeTab?: 'code' | 'preview';
+  resources: ResourceMetrics;
+  suggestions: OptimizationSuggestion[];
+  history: HistorySnapshot[];
+  selectedHistoryId: string | null;
+  activeReview: ReviewReport | null;
 }
 
 export interface FileEntry {
