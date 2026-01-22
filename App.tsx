@@ -540,9 +540,19 @@ export default function App() {
   }, []);
 
   const startGeneration = async () => {
-    if (!input) return;
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return;
     setProject(prev => ({
       ...prev,
+      userPrompt: trimmedInput,
+      plan: undefined,
+      designSystem: undefined,
+      status: "planning",
+      terminalLogs: [...prev.terminalLogs, `> Initializing Project: "${trimmedInput}"`],
+      fileSystem: {},
+      iterationCount: 0,
+      currentFile: null,
+      lastSaved: undefined
       userPrompt: input,
       status: "managing",
       fileSystem: {},
